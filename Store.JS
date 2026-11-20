@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════
    ONLINE MARKET — store.js (customer page)
 ═══════════════════════════════════════ */
-const SB_URL = 'https://aweuqtiqfxjoflvvturi.supabase.co';
-const SB_KEY = 'sb_publishable_DIHyv13-yCxgBKIC8PYCvQ_394bcWSE';
+const SB_URL = 'https://znminmjaiprdgwjdxirj.supabase.co';
+const SB_KEY = 'sb_publishable_CVcKNac97IpfUu7k1PETkQ_GBJ_S0iY';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
 const $ = id => document.getElementById(id);
