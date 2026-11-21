@@ -81,12 +81,6 @@ function applySettings() {
   $('fWaRow').classList.toggle('hide', !wa);
   $('walletName').textContent = settings.wallet_name || 'المحفظة';
   $('walletNum').textContent = settings.wallet_number || '';
-  const fee = Number(settings.delivery_fee) || 0, min = Number(settings.min_order) || 0, free = Number(settings.free_over) || 0;
-  const info = [`التوصيل ${fee > 0 ? EGP(fee) : 'مجاني'}`];
-  if (min > 0) info.push(`الحد الأدنى للطلب ${EGP(min)}`);
-  if (free > 0 && fee > 0) info.push(`توصيل مجاني فوق ${EGP(free)}`);
-  $('infoBar').textContent = info.join(' · ');
-  $('infoBar').classList.remove('hide');
 }
 
 function renderAll() { renderChips(); renderOffers(); renderProducts(); renderBar(); if ($('moCart').classList.contains('open')) renderCart(); }
