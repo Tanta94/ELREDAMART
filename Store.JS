@@ -58,15 +58,35 @@ async function loadAll() {
   renderAll();
 }
 
+function applyBrand() {
+  const raw = settings.brand_color || '';
+  if (!/^#[0-9a-f]{6}$/i.test(raw)) return;
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(raw.slice(i, i + 2), 16));
+  const root = document.documentElement.style;
+  root.setProperty('--acc', raw);
+  root.setProperty('--acc-d', `rgb(${Math.round(r * .85)},${Math.round(g * .85)},${Math.round(b * .85)})`);
+  root.setProperty('--acc-bg', `rgba(${r},${g},${b},.1)`);
+}
+
 function applySettings() {
+  applyBrand();
   const n = settings.shop_name || 'المتجر';
   $('shopName').textContent = n; $('shopName2').textContent = n; document.title = n;
+  if (settings.logo_url) { $('logoImg').src = settings.logo_url; $('logoImg').classList.remove('hide'); }
+  else $('logoImg').classList.add('hide');
   $('closedBanner').style.display = settings.accepting === 'false' ? 'block' : 'none';
   const wa = (settings.whatsapp || '').replace(/\D/g, '');
   $('waLink').classList.toggle('hide', !wa);
-  if (wa) $('waLink').href = 'https://wa.me/' + wa;
+  if (wa) { $('waLink').href = 'https://wa.me/' + wa; $('fWa').href = 'https://wa.me/' + wa; $('fWa').textContent = '+' + wa; }
+  $('fWaRow').classList.toggle('hide', !wa);
   $('walletName').textContent = settings.wallet_name || 'المحفظة';
   $('walletNum').textContent = settings.wallet_number || '';
+  const fee = Number(settings.delivery_fee) || 0, min = Number(settings.min_order) || 0, free = Number(settings.free_over) || 0;
+  const info = [`التوصيل ${fee > 0 ? EGP(fee) : 'مجاني'}`];
+  if (min > 0) info.push(`الحد الأدنى للطلب ${EGP(min)}`);
+  if (free > 0 && fee > 0) info.push(`توصيل مجاني فوق ${EGP(free)}`);
+  $('infoBar').textContent = info.join(' · ');
+  $('infoBar').classList.remove('hide');
 }
 
 function renderAll() { renderChips(); renderOffers(); renderProducts(); renderBar(); if ($('moCart').classList.contains('open')) renderCart(); }
@@ -199,22 +219,45 @@ $('cartBtn').addEventListener('click', openCart);
 $('barBtn').addEventListener('click', openCart);
 
 /* ── Location ── */
+const inApp = /FBAN|FBAV|Instagram|WhatsApp|Line\/|Snapchat|MicroMessenger|TikTok|; wv\)/i.test(navigator.userAgent || '');
 function showGeo() {
   $('locState').innerHTML = geo
     ? `تم تحديد موقعك · <a href="https://www.google.com/maps?q=${geo.lat},${geo.lng}" target="_blank" rel="noopener">عرض على الخريطة</a> · <a href="#" id="locClear">إزالة</a>`
     : 'لم يتم تحديد الموقع (اختياري)';
 }
 $('locState').addEventListener('click', e => { if (e.target.id === 'locClear') { e.preventDefault(); geo = null; showGeo(); } });
-$('locBtn').addEventListener('click', () => {
-  if (!navigator.geolocation) { toast('المتصفح لا يدعم تحديد الموقع', 'err'); return; }
+function locHelp(msg) {
+  $('locHelp').textContent = msg; $('locHelp').classList.remove('hide');
+  $('mapLinkRow').classList.remove('hide');
+}
+const getPos = opts => new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, opts));
+$('locBtn').addEventListener('click', async () => {
+  $('locHelp').classList.add('hide');
+  if (!navigator.geolocation) { locHelp('هذا المتصفح لا يدعم تحديد الموقع. اكتب عنوانك أو الصق رابط موقعك من خرائط جوجل.'); return; }
+  if (window.isSecureContext === false) { locHelp('تحديد الموقع يعمل فقط على رابط آمن (https). افتح الرابط الرسمي للمتجر.'); return; }
   $('locBtn').disabled = true; $('locState').textContent = 'جاري تحديد الموقع...';
-  navigator.geolocation.getCurrentPosition(pos => {
-    geo = { lat: +pos.coords.latitude.toFixed(6), lng: +pos.coords.longitude.toFixed(6) };
-    $('locBtn').disabled = false; showGeo();
-  }, err => {
-    $('locBtn').disabled = false; showGeo();
-    toast(err && err.code === 1 ? 'تم رفض إذن الموقع، اكتب عنوانك يدوياً' : 'تعذر تحديد الموقع، حاول مرة أخرى', 'err', 4000);
-  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  let pos = null, err = null;
+  try { pos = await getPos({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }); }
+  catch (e) {
+    err = e;
+    // لو المشكلة مش رفض إذن (GPS ضعيف أو انتهت المهلة) نجرب بدقة أقل
+    if (e && e.code !== 1) {
+      try { pos = await getPos({ enableHighAccuracy: false, timeout: 15000, maximumAge: 120000 }); err = null; } catch (e2) { err = e2; }
+    }
+  }
+  $('locBtn').disabled = false;
+  if (pos) { geo = { lat: +pos.coords.latitude.toFixed(6), lng: +pos.coords.longitude.toFixed(6) }; showGeo(); return; }
+  showGeo();
+  const code = err && err.code;
+  if (code === 1) {
+    locHelp(inApp
+      ? 'يبدو أنك فتحت الصفحة من داخل تطبيق (واتساب أو فيسبوك أو انستجرام) وهو لا يسمح بتحديد الموقع. افتح الرابط من متصفح Chrome أو Safari. أو الصق رابط موقعك من خرائط جوجل بالأسفل.'
+      : 'إذن الموقع غير مفعّل لهذا الموقع. اضغط على أيقونة القفل بجوار الرابط ثم الأذونات ثم الموقع ثم سماح، وأعد المحاولة. على الآيفون: الإعدادات ثم الخصوصية ثم خدمات الموقع ثم Safari. أو الصق رابط موقعك من خرائط جوجل بالأسفل.');
+  } else if (code === 3) {
+    locHelp('انتهت مهلة تحديد الموقع. تأكد من تشغيل GPS وأعد المحاولة، أو الصق رابط موقعك من خرائط جوجل.');
+  } else {
+    locHelp('تعذر تحديد موقعك. تأكد من تشغيل GPS وأعد المحاولة، أو الصق رابط موقعك من خرائط جوجل.');
+  }
 });
 
 /* ══ PLACE ORDER ══ */
@@ -226,8 +269,12 @@ $('placeBtn').addEventListener('click', async () => {
   const ref = $('walletRef').value.replace(/[\s-]/g, '');
   if (!name) { toast('أدخل الاسم', 'err'); $('cName').focus(); return; }
   if (!/^\+?\d{10,14}$/.test(phone)) { toast('رقم الهاتف غير صحيح', 'err'); $('cPhone').focus(); return; }
-  if (!addr && geo) addr = 'الموقع المحدد على الخريطة';
+  const link = $('mapLink').value.trim();
+  const okLink = /^https?:\/\/\S+$/i.test(link) && link.length < 400;
+  if (link && !okLink) { toast('رابط الموقع غير صحيح', 'err'); $('mapLink').focus(); return; }
+  if (!addr && (geo || okLink)) addr = geo ? 'الموقع المحدد على الخريطة' : 'الموقع على الرابط المرفق';
   if (!addr) { toast('أدخل العنوان أو حدد موقعك', 'err'); $('cAddr').focus(); return; }
+  if (okLink && !geo) addr += `\nرابط الموقع: ${link}`;
   if (payMethod === 'wallet' && !/^\+?\d{10,14}$/.test(ref)) { toast('أدخل رقم المحفظة المحوَّل منها', 'err'); $('walletRef').focus(); return; }
 
   const items = Object.values(cart).filter(c => getItem(c.type, c.id)).map(({ type, id, qty }) => ({ type, id, qty }));
@@ -247,7 +294,7 @@ $('placeBtn').addEventListener('click', async () => {
   }
 
   ls.set('mk_name', name); ls.set('mk_phone', phone); ls.set('mk_addr', $('cAddr').value.trim());
-  cart = {}; saveCart(); $('cNotes').value = ''; $('walletRef').value = '';
+  cart = {}; saveCart(); $('cNotes').value = ''; $('walletRef').value = ''; $('mapLink').value = '';
   closeMo('moCart'); renderOffers(); renderProducts(); renderBar();
 
   $('dNo').textContent = `#${data.order_no}`;
