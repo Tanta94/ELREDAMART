@@ -56,6 +56,7 @@ async function loadAll() {
   applySettings();
   loadCart();
   renderAll();
+  if (!tourSeen('mk_tour_main') && products.length) setTimeout(mainTour, 700);
 }
 
 function applyBrand() {
@@ -207,7 +208,7 @@ function openCart() {
   $('cName').value = $('cName').value || ls.get('mk_name') || '';
   $('cPhone').value = $('cPhone').value || ls.get('mk_phone') || '';
   $('cAddr').value = $('cAddr').value || ls.get('mk_addr') || '';
-  renderCart(); openMo('moCart');
+  renderCart(); openMo('moCart'); cartTour();
 }
 $('cartBtn').addEventListener('click', openCart);
 $('barBtn').addEventListener('click', openCart);
@@ -306,6 +307,7 @@ function openTrack() {
   if ($('trkPhone').value) track();
 }
 $('trackBtn').addEventListener('click', openTrack);
+$('helpBtn').addEventListener('click', mainTour);
 $('dTrack').addEventListener('click', () => { closeMo('moDone'); openTrack(); });
 $('trkGo').addEventListener('click', track);
 $('trkPhone').addEventListener('keydown', e => { if (e.key === 'Enter') track(); });
@@ -338,6 +340,80 @@ window.cancelOrder = async id => {
   toast(data ? 'تم إلغاء الطلب' : 'لا يمكن إلغاء الطلب الآن، تواصل مع المتجر', data ? 'ok' : 'err', 4000);
   track();
 };
+
+/* ══ TOUR (شرح الموقع لأول زيارة) ══ */
+const tourSeen = k => ls.get(k) === '1';
+let tour = null;
+function tourStart(name, steps, key) {
+  tourEnd(true);
+  steps = steps.filter(s => !s.el || document.querySelector(s.el));
+  if (!steps.length) return;
+  const ov = document.createElement('div'); ov.className = 'tr-ov';
+  const hl = document.createElement('div'); hl.className = 'tr-hl';
+  const tip = document.createElement('div'); tip.className = 'tr-tip';
+  document.body.append(ov, hl, tip);
+  tour = { name, steps, key, i: 0, ov, hl, tip };
+  tourShow();
+}
+function tourEnd(silent) {
+  if (!tour) return;
+  if (!silent && tour.key) ls.set(tour.key, '1');
+  tour.ov.remove(); tour.hl.remove(); tour.tip.remove(); tour = null;
+}
+function tourShow() {
+  const t = tour, s = t.steps[t.i], last = t.i === t.steps.length - 1;
+  const target = s.el ? document.querySelector(s.el) : null;
+  t.tip.innerHTML = `<b>${esc(s.title)}</b><p>${esc(s.text)}</p>
+    <div class="tr-foot"><span class="tr-dots">${t.steps.map((_, k) => `<i class="${k === t.i ? 'on' : ''}"></i>`).join('')}</span>
+    <span>${last ? '' : '<button class="tr-skip" id="trSkip">تخطي</button>'}<button class="tr-next" id="trNext">${last ? 'تمام' : t.i === 0 && !target ? 'ابدأ' : 'التالي'}</button></span></div>`;
+  $('trNext').onclick = () => { if (last) tourEnd(); else { t.i++; tourShow(); } };
+  const sk = $('trSkip'); if (sk) sk.onclick = () => tourEnd();
+  t.tip.style.visibility = 'hidden';
+  if (target) target.scrollIntoView({ block: 'center', behavior: 'auto' });
+  setTimeout(() => tourPlace(), 60);
+}
+function tourPlace() {
+  if (!tour) return;
+  const t = tour, s = t.steps[t.i], target = s.el ? document.querySelector(s.el) : null;
+  const vw = window.innerWidth, vh = window.innerHeight, tw = Math.min(300, vw - 24);
+  t.tip.style.width = tw + 'px';
+  const th = t.tip.offsetHeight;
+  if (!target) {
+    t.hl.style.display = 'none'; t.ov.classList.add('dark');
+    t.tip.style.left = (vw - tw) / 2 + 'px'; t.tip.style.top = Math.max(12, (vh - th) / 2) + 'px';
+  } else {
+    t.ov.classList.remove('dark');
+    const r = target.getBoundingClientRect(), pad = 6;
+    Object.assign(t.hl.style, { display: 'block', top: r.top - pad + 'px', left: r.left - pad + 'px', width: r.width + pad * 2 + 'px', height: r.height + pad * 2 + 'px' });
+    let top = r.bottom + 14;
+    if (top + th > vh - 10) top = Math.max(10, r.top - th - 14);
+    let left = r.left + r.width / 2 - tw / 2;
+    left = Math.max(12, Math.min(left, vw - tw - 12));
+    t.tip.style.left = left + 'px'; t.tip.style.top = top + 'px';
+  }
+  t.tip.style.visibility = 'visible';
+}
+window.addEventListener('resize', () => tourPlace());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') tourEnd(); });
+
+function mainTour() {
+  tourStart('main', [
+    { title: 'أهلاً بيك في ' + (settings.shop_name || 'المتجر'), text: 'هنعرّفك على الموقع في خطوات سريعة، مش هتاخد أكتر من نص دقيقة.' },
+    { el: '#search', title: 'ابحث عن المنتج', text: 'اكتب اسم المنتج هنا ويظهر لك على طول.' },
+    { el: '#chips', title: 'اختار القسم', text: 'اضغط على أي قسم عشان تشوف منتجاته بس.' },
+    { el: '#offers .of-card, #prods .pc .btn', title: 'أضف للسلة', text: 'اضغط «إضافة» على أي منتج أو عرض، وتقدر تزوّد الكمية بعدها.' },
+    { el: '#cartBtn', title: 'سلتك', text: 'من هنا تفتح السلة وتراجع طلبك وتكمل الشراء.' },
+  ], 'mk_tour_main');
+}
+function cartTour() {
+  if (tourSeen('mk_tour_cart') || tour) return;
+  setTimeout(() => tourStart('cart', [
+    { el: '#cName', title: 'بياناتك', text: 'اكتب اسمك ورقم تليفونك وعنوانك بالتفصيل عشان المندوب يوصلك.' },
+    { el: '#locBtn', title: 'موقعك', text: 'اضغط هنا ويتحدد موقعك من التليفون، وده اختياري.' },
+    { el: '#payOpts', title: 'طريقة الدفع', text: 'اختار تدفع كاش عند الاستلام أو بالمحفظة الإلكترونية.' },
+    { el: '#placeBtn', title: 'تأكيد الطلب', text: 'اضغط هنا لما تخلّص، وهيوصلنا طلبك على طول.' },
+  ], 'mk_tour_cart'), 350);
+}
 
 /* ══ INIT ══ */
 document.addEventListener('DOMContentLoaded', () => {
