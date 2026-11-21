@@ -163,6 +163,20 @@ footer a{color:#ddd}
 .logo{display:flex;align-items:center;gap:8px}
 .logo img{height:34px;max-width:130px;object-fit:contain}
 
+
+.tr-ov{position:fixed;inset:0;z-index:900}
+.tr-ov.dark{background:rgba(0,0,0,.6)}
+.tr-hl{position:fixed;z-index:901;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.6);border:2px solid #fff;pointer-events:none;transition:all .2s}
+.tr-tip{position:fixed;z-index:902;background:#fff;color:#222;border-radius:10px;padding:14px 16px;box-shadow:0 8px 30px rgba(0,0,0,.3);line-height:1.7}
+.tr-tip b{font-size:1rem}
+.tr-tip p{margin:4px 0 12px;font-size:.9rem;color:#444}
+.tr-foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tr-dots{display:flex;gap:4px}
+.tr-dots i{width:7px;height:7px;border-radius:50%;background:#d5d5d5}
+.tr-dots i.on{background:var(--acc)}
+.tr-next,.tr-skip{border:none;border-radius:6px;padding:6px 14px;font-size:.86rem;font-weight:700;cursor:pointer;font-family:inherit}
+.tr-next{background:var(--acc);color:#fff}
+.tr-skip{background:transparent;color:#777;margin-inline-end:4px}
 </style>
 </head>
 <body>
@@ -173,6 +187,7 @@ footer a{color:#ddd}
     <div class="logo"><img id="logoImg" class="hide" alt=""/><span id="shopName">المتجر</span></div>
     <div class="top-act">
       <a class="btn btn-line btn-sm hide" id="waLink" target="_blank" rel="noopener">واتساب</a>
+      <button class="btn btn-line btn-sm" id="helpBtn" title="شرح الموقع">؟</button>
       <button class="btn btn-line btn-sm" id="trackBtn">طلباتي</button>
       <button class="btn btn-gold btn-sm" id="cartBtn">السلة<span class="cnt" id="cartCount">0</span></button>
     </div>
