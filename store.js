@@ -39,10 +39,21 @@ const itemName = it => it.title || it.name;
 const isAvail = (type, it) => type === 'offer' ? true : it.available;
 
 /* ══ LOAD ══ */
+// الخادم بيرجّع 1000 صف بس في المرة، فنقرا المنتجات على دفعات
+async function fetchAll(make) {
+  let out = [], from = 0;
+  for (;;) {
+    const { data, error } = await make().range(from, from + 999);
+    if (error) return { data: null, error };
+    out = out.concat(data || []);
+    if (!data || data.length < 1000 || from > 30000) return { data: out, error: null };
+    from += 1000;
+  }
+}
 async function loadAll() {
   const [c, p, o, s] = await Promise.all([
     sb.from('mk_categories').select('*').eq('active', true).order('sort').order('id'),
-    sb.from('mk_products').select('*').eq('active', true).order('sort').order('id'),
+    fetchAll(() => sb.from('mk_products').select('*').eq('active', true).order('sort').order('id')),
     sb.from('mk_offers').select('*').eq('active', true).order('sort').order('id'),
     sb.from('mk_settings').select('*'),
   ]);
