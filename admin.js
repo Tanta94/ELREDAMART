@@ -47,7 +47,18 @@ function beep() {
 }
 
 /* ── State ── */
-let cats = [], prods = [], offs = [], orders = [], settings = {};
+let cats = [], prods = [], offs = [], orders = [], posSales = [], settings = {};
+// PostgREST بيرجّع 1000 صف بس في المرة، فنقرا على دفعات
+async function fetchAll(make) {
+  let out = [], from = 0;
+  for (;;) {
+    const { data, error } = await make().range(from, from + 999);
+    if (error) return { data: null, error };
+    out = out.concat(data || []);
+    if (!data || data.length < 1000 || from > 30000) return { data: out, error: null };
+    from += 1000;
+  }
+}
 let ordFilter = 'active', knownMax = null, started = false, timer = null;
 
 /* ══ AUTH ══ */
@@ -65,6 +76,8 @@ $('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogi
 $('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginPass').focus(); });
 $('logoutBtn').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
 
+$('prodSearch').addEventListener('input', renderLists);
+
 /* ══ NAV ══ */
 document.querySelectorAll('.nav[data-tab]').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('.nav[data-tab]').forEach(b => b.classList.toggle('on', b === btn));
@@ -80,7 +93,7 @@ $('sbOv').addEventListener('click', closeSB);
 async function loadAll() {
   const [c, p, o, s] = await Promise.all([
     sb.from('mk_categories').select('*').order('sort').order('id'),
-    sb.from('mk_products').select('*').order('sort').order('id'),
+    fetchAll(() => sb.from('mk_products').select('*').order('sort').order('id')),
     sb.from('mk_offers').select('*').order('sort').order('id'),
     sb.from('mk_settings').select('*'),
   ]);
@@ -88,8 +101,9 @@ async function loadAll() {
   cats = c.data || []; prods = p.data || []; offs = o.data || [];
   settings = Object.fromEntries((s.data || []).map(r => [r.key, r.value]));
   $('admName').textContent = settings.shop_name || 'المتجر'; applyBrand();
-  renderLists(); renderSettings();
+  renderLists(); renderSettings(); renderPos();
   await loadOrders(true);
+  loadPos();
 }
 async function start() {
   if (started) return; started = true;
@@ -99,7 +113,8 @@ async function start() {
 
 /* ══ ORDERS ══ */
 async function loadOrders(initial) {
-  const { data, error } = await sb.from('mk_orders').select('*').order('id', { ascending: false }).limit(300);
+  let { data, error } = await sb.from('mk_orders').select('*').neq('source', 'pos').order('id', { ascending: false }).limit(300);
+  if (error) ({ data, error } = await sb.from('mk_orders').select('*').order('id', { ascending: false }).limit(300));  // قبل تشغيل pos-setup.sql
   if (error) { console.error('orders error', error); if (initial) toast('تعذر تحميل الطلبات', 'err'); return; }
   orders = data || [];
   const max = orders.reduce((m, o) => Math.max(m, o.id), 0);
@@ -187,23 +202,28 @@ function orderCard(o) {
 
 /* ══ INVOICE ══ */
 let curInv = null;
-const payPlain = o => o.payment_method === 'wallet'
-  ? `محفظة إلكترونية${o.payment_status === 'paid' ? ' (تم الدفع)' : ' (لم يتم تأكيد الدفع)'}`
-  : `نقداً عند الاستلام${o.payment_status === 'paid' ? ' (تم التحصيل)' : ''}`;
+const isPos = o => o.source === 'pos';
+const payPlain = o => o.payment_method === 'card' ? 'كارت'
+  : o.payment_method === 'wallet'
+    ? `محفظة إلكترونية${o.payment_status === 'paid' ? ' (تم الدفع)' : ' (لم يتم تأكيد الدفع)'}`
+    : isPos(o) ? 'نقدي' : `نقداً عند الاستلام${o.payment_status === 'paid' ? ' (تم التحصيل)' : ''}`;
+const hasCust = o => !isPos(o) || o.customer_name !== 'عميل نقدي' || (o.customer_phone && o.customer_phone !== '-');
 function invoiceHtml(o) {
   const shop = settings.shop_name || 'المتجر';
   const wa = (settings.whatsapp || '').replace(/\D/g, '');
   return `<div class="inv-head">
       <div>${settings.logo_url ? `<img src="${esc(settings.logo_url)}" alt="" style="max-height:48px;max-width:130px;display:block;margin-bottom:6px"/>` : ''}<h2>${esc(shop)}</h2>${wa ? `<div style="font-size:.84rem;direction:ltr;text-align:right">+${wa}</div>` : ''}</div>
-      <div class="inv-meta"><b>فاتورة رقم #${o.order_no}</b><br>${fullDate(o.created_at)}</div>
+      <div class="inv-meta"><b>${isPos(o) ? 'إيصال' : 'فاتورة'} رقم #${o.order_no}</b><br>${fullDate(o.created_at)}</div>
     </div>
-    <div class="inv-cust"><b>العميل:</b> ${esc(o.customer_name)}\n<b>الهاتف:</b> <span dir="ltr">${esc(o.customer_phone)}</span>\n<b>العنوان:</b> ${esc(o.address)}</div>
+    ${hasCust(o) ? `<div class="inv-cust"><b>العميل:</b> ${esc(o.customer_name)}${o.customer_phone && o.customer_phone !== '-' ? `\n<b>الهاتف:</b> <span dir="ltr">${esc(o.customer_phone)}</span>` : ''}${isPos(o) ? '' : `\n<b>العنوان:</b> ${esc(o.address)}`}</div>` : ''}
     <table class="inv-t"><tr><th>#</th><th>الصنف</th><th>السعر</th><th>الكمية</th><th>الإجمالي</th></tr>
       ${(o.items || []).map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.name)}</td><td>${EGP(i.price)}</td><td>${i.qty}</td><td>${EGP(i.price * i.qty)}</td></tr>`).join('')}</table>
     <div class="inv-tot">
       <div><span>المنتجات</span><span>${EGP(o.subtotal)}</span></div>
-      <div><span>التوصيل</span><span>${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'}</span></div>
+      ${isPos(o) ? '' : `<div><span>التوصيل</span><span>${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'}</span></div>`}
+      ${Number(o.discount) > 0 ? `<div><span>الخصم</span><span>- ${EGP(o.discount)}</span></div>` : ''}
       <div class="g"><span>الإجمالي</span><span>${EGP(o.total)}</span></div>
+      ${isPos(o) && o.payment_method === 'cash' && o.received != null ? `<div><span>المستلم</span><span>${EGP(o.received)}</span></div><div><span>الباقي</span><span>${EGP(Number(o.received) - Number(o.total))}</span></div>` : ''}
     </div>
     <div class="inv-pay"><b>طريقة الدفع:</b> ${payPlain(o)}</div>
     <div class="inv-foot">شكراً لتعاملكم معنا</div>`;
@@ -211,17 +231,20 @@ function invoiceHtml(o) {
 function invText(o) {
   const shop = settings.shop_name || 'المتجر';
   return [
-    `فاتورة طلب #${o.order_no} - ${shop}`, `التاريخ: ${fullDate(o.created_at)}`, '',
-    `العميل: ${o.customer_name}`, `الهاتف: ${o.customer_phone}`, `العنوان: ${o.address}`,
+    `${isPos(o) ? 'إيصال' : 'فاتورة طلب'} #${o.order_no} - ${shop}`, `التاريخ: ${fullDate(o.created_at)}`, '',
+    hasCust(o) ? `العميل: ${o.customer_name}` : null, hasCust(o) && o.customer_phone !== '-' ? `الهاتف: ${o.customer_phone}` : null, isPos(o) ? null : `العنوان: ${o.address}`,
     o.lat != null ? `الموقع: https://www.google.com/maps?q=${o.lat},${o.lng}` : null, '',
     'الطلب:', ...(o.items || []).map(i => `${i.qty} × ${i.name} = ${EGP(i.price * i.qty)}`), '',
-    `المنتجات: ${EGP(o.subtotal)}`, `التوصيل: ${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'}`,
-    `الإجمالي: ${EGP(o.total)}`, `الدفع: ${payPlain(o)}`, '', 'شكراً لطلبكم',
+    `المنتجات: ${EGP(o.subtotal)}`, isPos(o) ? null : `التوصيل: ${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'}`,
+    Number(o.discount) > 0 ? `الخصم: ${EGP(o.discount)}` : null,
+    `الإجمالي: ${EGP(o.total)}`, `الدفع: ${payPlain(o)}`, '', isPos(o) ? 'شكراً لزيارتكم' : 'شكراً لطلبكم',
   ].filter(x => x !== null).join('\n');
 }
 window.showInvoice = id => {
-  const o = orders.find(x => x.id === id); if (!o) return;
-  curInv = o; $('invoice').innerHTML = invoiceHtml(o); openMo('moInv');
+  const o = orders.find(x => x.id === id) || posSales.find(x => x.id === id); if (!o) return;
+  curInv = o; $('invoice').innerHTML = invoiceHtml(o); $('invoice').classList.toggle('rcpt', isPos(o));
+  $('invWa').style.display = hasCust(o) && o.customer_phone && o.customer_phone !== '-' ? '' : 'none';
+  openMo('moInv');
 };
 async function invFile(o) {
   if (!window.html2canvas) return null;
@@ -229,7 +252,15 @@ async function invFile(o) {
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
   return blob ? new File([blob], `invoice-${o.order_no}.png`, { type: 'image/png' }) : null;
 }
-$('invPrint').addEventListener('click', () => window.print());
+$('invPrint').addEventListener('click', () => {
+  // إيصال الكاشير بمقاس ورق الطابعة الحرارية 80mm
+  if (curInv && isPos(curInv)) {
+    const st = document.createElement('style'); st.textContent = '@page{size:80mm auto;margin:3mm}'; document.head.appendChild(st);
+    const done = () => { st.remove(); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+  }
+  window.print();
+});
 $('invImg').addEventListener('click', async () => {
   if (!curInv) return;
   try {
@@ -286,7 +317,7 @@ const actions = (key, id) => `<td class="r"><button class="btn btn-line btn-sm" 
 const CFG = {
   products: {
     label: 'منتج',
-    fields: [['name', 'اسم المنتج', 'text', 1], ['category_id', 'القسم', 'cat'], ['description', 'الوصف', 'text'], ['price', 'السعر (جنيه)', 'number', 1], ['old_price', 'السعر قبل الخصم (اختياري)', 'number'], ['image_url', 'صورة المنتج', 'image'], ['sort', 'الترتيب', 'number']],
+    fields: [['name', 'اسم المنتج', 'text', 1], ['barcode', 'الباركود (اختياري)', 'text'], ['category_id', 'القسم', 'cat'], ['description', 'الوصف', 'text'], ['price', 'السعر (جنيه)', 'number', 1], ['old_price', 'السعر قبل الخصم (اختياري)', 'number'], ['image_url', 'صورة المنتج', 'image'], ['sort', 'الترتيب', 'number']],
     head: ['', 'المنتج', 'السعر', 'متاح', 'ظاهر', ''],
     row: r => `<td>${thumb(r.image_url)}</td><td><b>${esc(r.name)}</b><div class="mut">${esc(catName(r.category_id))}</div></td><td class="gold">${EGP(r.price)}${r.old_price ? ` <s class="mut">${EGP(r.old_price)}</s>` : ''}</td><td>${tog('products', r.id, 'available', r.available)}</td><td>${tog('products', r.id, 'active', r.active)}</td>${actions('products', r.id)}`,
   },
@@ -306,10 +337,16 @@ const CFG = {
 
 function renderLists() {
   for (const key of Object.keys(CFG)) {
-    const list = DATA()[key], cfg = CFG[key];
+    let list = DATA()[key]; const cfg = CFG[key];
+    let more = 0;
+    if (key === 'products') {
+      const q = ($('prodSearch') ? $('prodSearch').value : '').trim().toLowerCase();
+      if (q) list = list.filter(p => p.name.toLowerCase().includes(q) || (p.barcode || '').includes(q));
+      if (list.length > 300) { more = list.length - 300; list = list.slice(0, 300); }
+    }
     $('list-' + key).innerHTML = `<table class="tbl"><thead><tr>${cfg.head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${
       list.length ? list.map(r => `<tr>${cfg.row(r)}</tr>`).join('')
-        : `<tr><td colspan="${cfg.head.length}" style="text-align:center;padding:30px;color:var(--ink3)">لا يوجد، أضف أول ${cfg.label}</td></tr>`}</tbody></table>`;
+        : `<tr><td colspan="${cfg.head.length}" style="text-align:center;padding:30px;color:var(--ink3)">لا يوجد، أضف أول ${cfg.label}</td></tr>`}</tbody></table>${more ? `<div class="mut" style="padding:10px">يوجد ${more} منتج آخر، استخدم البحث لإظهارهم</div>` : ''}`;
   }
 }
 window.toggleField = async (key, id, field, v) => {
@@ -466,3 +503,269 @@ $('btnSaveSet').addEventListener('click', async () => {
   if (session) { $('loginScreen').style.display = 'none'; start(); }
   else $('loginUser').focus();
 })();
+
+/* ══════════════════════════════════════
+   POS — الكاشير
+══════════════════════════════════════ */
+const POS_CART = 'mk_pos_cart', POS_HOLD = 'mk_pos_hold';
+const jget = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+const jset = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const r2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+const PAYN = { cash: 'نقدي', card: 'كارت', wallet: 'محفظة' };
+let pc = { lines: [], cat: 'all', pay: 'cash', busy: false, cu: 1 };
+try { const sv = jget(POS_CART, []); if (Array.isArray(sv)) pc.lines = sv.filter(l => l && l.name && l.qty > 0 && l.price >= 0); } catch (e) {}
+const savePos = () => jset(POS_CART, pc.lines);
+const holds = () => { const h = jget(POS_HOLD, []); return Array.isArray(h) ? h : []; };
+
+const barcodes = p => String(p.barcode || '').split(/[|,\s]+/).filter(Boolean);
+function posList() {
+  const q = $('posSearch').value.trim().toLowerCase();
+  return prods.filter(p => p.active && p.available
+    && (pc.cat === 'all' || String(p.category_id) === String(pc.cat))
+    && (!q || p.name.toLowerCase().includes(q) || barcodes(p).some(b => b.includes(q))));
+}
+function renderPosChips() {
+  const used = new Set(prods.filter(p => p.active && p.available).map(p => p.category_id));
+  $('posChips').innerHTML = [`<button class="chip ${pc.cat === 'all' ? 'on' : ''}" data-c="all">الكل</button>`]
+    .concat(cats.filter(c => used.has(c.id)).map(c => `<button class="chip ${String(pc.cat) === String(c.id) ? 'on' : ''}" data-c="${c.id}">${esc(c.name)}</button>`)).join('');
+}
+function renderPosGrid() {
+  const list = posList(), CAP = 120;
+  $('posGrid').innerHTML = list.length
+    ? list.slice(0, CAP).map(p => `<button class="pos-p" data-id="${p.id}"><b>${esc(p.name)}</b><span>${EGP(p.price)}</span></button>`).join('')
+    : '<div class="empty">لا توجد منتجات مطابقة</div>';
+  $('posMore').textContent = list.length > CAP ? `يظهر أول ${CAP} من ${list.length} منتج، اكتب في البحث لتضييق النتائج` : '';
+}
+const posSub = () => r2(pc.lines.reduce((t, l) => t + Number(l.price) * Number(l.qty), 0));
+function posDisc(sub) {
+  const v = Math.max(0, Number($('posDisc').value) || 0);
+  return r2(Math.min(sub, $('posDiscT').value === 'pct' ? sub * Math.min(v, 100) / 100 : v));
+}
+function renderPosCart() {
+  $('posLines').innerHTML = pc.lines.length ? pc.lines.map(l => `<div class="pl" data-k="${l.key}">
+      <div class="pl-n">${esc(l.name)}</div><div class="pl-t">${EGP(r2(l.price * l.qty))}</div>
+      <div class="pl-c">
+        <span class="q"><button data-a="dec">−</button><input data-f="qty" type="number" min="0" step="any" value="${l.qty}"/><button data-a="inc">+</button></span>
+        <span class="mut">×</span><input data-f="price" type="number" min="0" step="any" value="${l.price}" title="تعديل السعر"/>
+        <button class="pl-x" data-a="del" title="حذف">✕</button>
+      </div></div>`).join('') : '<div class="pos-empty">الفاتورة فاضية، اختار منتج أو امسح الباركود</div>';
+  posTotals();
+}
+function posTotals() {
+  const sub = posSub(), disc = posDisc(sub), tot = r2(sub - disc), cash = pc.pay === 'cash';
+  $('posSub').textContent = EGP(sub); $('posTot').textContent = EGP(tot);
+  $('posCash').classList.toggle('hide', !cash);
+  const rv = $('posRecv').value.trim(), recv = rv === '' ? null : Number(rv);
+  const chg = recv == null ? 0 : r2(recv - tot);
+  $('posChg').textContent = EGP(Math.max(chg, 0)); $('posChg').parentElement.classList.toggle('neg', chg < 0);
+  if (chg < 0) $('posChg').textContent = 'ناقص ' + EGP(-chg);
+  const bad = cash && recv != null && recv < tot;
+  $('posPay').disabled = pc.busy || !pc.lines.length || bad;
+  $('posPay').textContent = pc.lines.length ? `إتمام البيع — ${EGP(tot)}  (F9)` : 'إتمام البيع  (F9)';
+  $('posHoldN').textContent = holds().length;
+}
+function renderPos() { renderPosChips(); renderPosGrid(); renderPosCart(); }
+
+function addLine(p) {
+  const key = 'p' + p.id, ex = pc.lines.find(l => l.key === key && l.price === Number(p.price));
+  if (ex) ex.qty = r2(ex.qty + 1);
+  else pc.lines.push({ key, id: p.id, name: p.name, price: Number(p.price), base: Number(p.price), qty: 1 });
+  savePos(); renderPosCart();
+}
+$('posGrid').addEventListener('click', e => {
+  const b = e.target.closest('.pos-p'); if (!b) return;
+  const p = prods.find(x => x.id === Number(b.dataset.id)); if (p) addLine(p);
+  $('posSearch').focus();
+});
+$('posChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; pc.cat = b.dataset.c; renderPosChips(); renderPosGrid(); });
+$('posSearch').addEventListener('input', renderPosGrid);
+$('posSearch').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.target.value = ''; renderPosGrid(); return; }
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = e.target.value.trim(); if (!v) return;
+  const hit = prods.find(p => p.active && p.available && barcodes(p).includes(v)) || (posList().length === 1 ? posList()[0] : null);
+  if (hit) { addLine(hit); e.target.value = ''; renderPosGrid(); }
+  else { toast('مفيش منتج بالاسم أو الباركود ده', 'err'); }
+});
+
+$('posLines').addEventListener('click', e => {
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  const k = b.closest('.pl').dataset.k, l = pc.lines.find(x => x.key === k); if (!l) return;
+  if (b.dataset.a === 'inc') l.qty = r2(l.qty + 1);
+  else if (b.dataset.a === 'dec') { l.qty = r2(l.qty - 1); if (l.qty <= 0) pc.lines = pc.lines.filter(x => x !== l); }
+  else pc.lines = pc.lines.filter(x => x !== l);
+  savePos(); renderPosCart();
+});
+$('posLines').addEventListener('change', e => {
+  const f = e.target.dataset.f; if (!f) return;
+  const k = e.target.closest('.pl').dataset.k, l = pc.lines.find(x => x.key === k); if (!l) return;
+  const v = Number(e.target.value);
+  if (f === 'qty') { if (!(v > 0)) pc.lines = pc.lines.filter(x => x !== l); else l.qty = r2(Math.min(v, 9999)); }
+  else if (v >= 0 && e.target.value !== '') l.price = r2(v);
+  savePos(); renderPosCart();
+});
+['posDisc', 'posDiscT', 'posRecv'].forEach(id => $(id).addEventListener('input', posTotals));
+$('posPayOpts').addEventListener('click', e => {
+  const b = e.target.closest('[data-pay]'); if (!b) return;
+  pc.pay = b.dataset.pay;
+  $('posPayOpts').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  posTotals();
+});
+$('posQ').addEventListener('click', e => {
+  const b = e.target.closest('[data-q]'); if (!b) return;
+  const tot = r2(posSub() - posDisc(posSub()));
+  $('posRecv').value = b.dataset.q === 'exact' ? tot : b.dataset.q; posTotals();
+});
+
+function posReset() {
+  pc.lines = []; savePos();
+  ['posDisc', 'posRecv', 'posName', 'posPhone'].forEach(id => { $(id).value = ''; });
+  $('posDiscT').value = 'amt'; renderPosCart();
+}
+$('posClear').addEventListener('click', () => { if (pc.lines.length && confirm('مسح الفاتورة الحالية؟')) posReset(); });
+
+// تعليق واسترجاع فواتير
+function holdCurrent() {
+  if (!pc.lines.length) return false;
+  const h = holds(); h.push({ id: Date.now(), at: new Date().toISOString(), lines: pc.lines, disc: $('posDisc').value, discT: $('posDiscT').value, name: $('posName').value, phone: $('posPhone').value });
+  jset(POS_HOLD, h); return true;
+}
+$('posHold').addEventListener('click', () => { if (!holdCurrent()) { toast('الفاتورة فاضية', 'err'); return; } posReset(); toast('تم تعليق الفاتورة', 'ok'); });
+function renderHolds() {
+  const h = holds();
+  $('holdList').innerHTML = h.length ? h.map(x => `<div class="hold-i"><div><b>${x.lines.length} صنف · ${EGP(r2(x.lines.reduce((t, l) => t + l.price * l.qty, 0)))}</b><div class="mut">${tm(x.at)}${x.name ? ' · ' + esc(x.name) : ''}</div></div>
+    <div><button class="btn btn-gold btn-sm" data-h="${x.id}" data-a="open">استرجاع</button> <button class="btn btn-red btn-sm" data-h="${x.id}" data-a="del">حذف</button></div></div>`).join('')
+    : '<div class="pos-empty">لا توجد فواتير معلّقة</div>';
+}
+$('posRecall').addEventListener('click', () => { renderHolds(); openMo('moHold'); });
+$('holdList').addEventListener('click', e => {
+  const b = e.target.closest('[data-h]'); if (!b) return;
+  const id = Number(b.dataset.h), h = holds(), x = h.find(y => y.id === id); if (!x) return;
+  if (b.dataset.a === 'del') { jset(POS_HOLD, h.filter(y => y.id !== id)); renderHolds(); posTotals(); return; }
+  const rest = h.filter(y => y.id !== id); jset(POS_HOLD, rest);
+  holdCurrent();                     // الفاتورة الحالية تتعلّق تلقائياً
+  pc.lines = x.lines; $('posDisc').value = x.disc || ''; $('posDiscT').value = x.discT || 'amt';
+  $('posName').value = x.name || ''; $('posPhone').value = x.phone || '';
+  savePos(); renderPosCart(); closeMo('moHold');
+});
+
+// صنف حر
+$('posCustom').addEventListener('click', () => { $('cuName').value = ''; $('cuPrice').value = ''; $('cuQty').value = 1; openMo('moCustom'); setTimeout(() => $('cuName').focus(), 50); });
+$('cuAdd').addEventListener('click', () => {
+  const name = $('cuName').value.trim(), price = Number($('cuPrice').value), qty = Number($('cuQty').value);
+  if (!name) { toast('اكتب اسم الصنف', 'err'); return; }
+  if (!($('cuPrice').value !== '' && price >= 0)) { toast('اكتب السعر', 'err'); return; }
+  if (!(qty > 0)) { toast('الكمية غير صحيحة', 'err'); return; }
+  pc.lines.push({ key: 'c' + Date.now() + (pc.cu++), id: null, name, price: r2(price), base: null, qty: r2(qty) });
+  savePos(); renderPosCart(); closeMo('moCustom'); $('posSearch').focus();
+});
+
+// إتمام البيع
+async function posPay() {
+  if (pc.busy || !pc.lines.length) return;
+  const sub = posSub(), disc = posDisc(sub), tot = r2(sub - disc), cash = pc.pay === 'cash';
+  const rv = $('posRecv').value.trim(), recv = rv === '' ? null : Number(rv);
+  if (cash && recv != null && recv < tot) { toast('المبلغ المستلم أقل من الإجمالي', 'err'); return; }
+  const items = pc.lines.map(l => l.id != null
+    ? (l.base !== null && l.price !== l.base ? { id: l.id, qty: l.qty, price: l.price } : { id: l.id, qty: l.qty })
+    : { name: l.name, qty: l.qty, price: l.price });
+  pc.busy = true; posTotals();
+  const { data, error } = await sb.rpc('mk_pos_sale', {
+    p_items: items, p_discount: disc, p_payment: pc.pay, p_received: cash ? recv : null,
+    p_name: $('posName').value.trim() || null, p_phone: $('posPhone').value.trim() || null, p_notes: null,
+  });
+  pc.busy = false;
+  if (error) {
+    console.error('pos sale', error);
+    const m = String(error.message || '');
+    toast(/does not exist|permission denied|schema cache/i.test(m) ? 'شغّل ملف pos-setup.sql في Supabase أولاً' : (m || 'تعذر إتمام البيع'), 'err', 5000);
+    posTotals(); return;
+  }
+  const chg = Number(data.change) || 0;
+  posReset();
+  toast(cash && chg > 0 ? `تم البيع — الباقي ${EGP(chg)}` : 'تم البيع', 'ok', 4000);
+  await loadPos();
+  showInvoice(data.id);
+}
+$('posPay').addEventListener('click', posPay);
+
+// مبيعات اليوم
+async function loadPos() {
+  const { data, error } = await sb.from('mk_orders').select('*').eq('source', 'pos').eq('order_date', todayStr()).order('id', { ascending: false }).limit(300);
+  if (error) { posSales = []; $('posSales').innerHTML = '<div class="pos-empty">لتفعيل الكاشير شغّل ملف pos-setup.sql في Supabase</div>'; $('posSalesSum').textContent = ''; return; }
+  posSales = data || []; renderPosSales();
+}
+function renderPosSales() {
+  const ok = posSales.filter(o => o.status !== 'cancelled');
+  const tot = ok.reduce((t, o) => t + Number(o.total), 0), cash = ok.filter(o => o.payment_method === 'cash').reduce((t, o) => t + Number(o.total), 0);
+  $('posSalesSum').textContent = ok.length ? `· ${ok.length} عملية · ${EGP(tot)} (نقدي ${EGP(cash)})` : '';
+  $('posSales').innerHTML = posSales.length ? `<table class="tbl"><thead><tr><th>#</th><th>الوقت</th><th>الأصناف</th><th>الدفع</th><th>الإجمالي</th><th></th></tr></thead><tbody>${
+    posSales.map(o => `<tr class="${o.status === 'cancelled' ? 'sale-x' : ''}"><td>${o.order_no}</td><td>${tm(o.created_at)}</td><td>${(o.items || []).reduce((n, i) => n + Number(i.qty), 0)}</td><td>${PAYN[o.payment_method] || ''}</td><td class="gold">${EGP(o.total)}</td>
+      <td class="r"><button class="btn btn-line btn-sm" onclick="showInvoice(${o.id})">إيصال</button>${o.status === 'cancelled' ? ' <span class="mut">ملغي</span>' : ` <button class="btn btn-red btn-sm" onclick="voidSale(${o.id})">إلغاء</button>`}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="pos-empty">لا توجد مبيعات اليوم</div>';
+}
+window.voidSale = async id => {
+  if (!confirm('إلغاء عملية البيع دي؟ مش هتتحسب في التقارير.')) return;
+  const { error } = await sb.from('mk_orders').update({ status: 'cancelled' }).eq('id', id);
+  if (error) { toast('تعذر الإلغاء', 'err'); return; }
+  toast('تم إلغاء العملية', 'ok'); loadPos();
+};
+
+// اختصارات
+document.addEventListener('keydown', e => {
+  if (!$('tab-pos').classList.contains('on') || document.querySelector('.mo.open')) return;
+  if (e.key === 'F9') { e.preventDefault(); posPay(); }
+  else if (e.key === 'F2') { e.preventDefault(); $('posSearch').focus(); }
+});
+
+/* ══ REPORTS ══ */
+const addDays = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+function setRange(r) {
+  const t = todayStr();
+  const [f, to] = r === 'yest' ? [addDays(t, -1), addDays(t, -1)] : r === 'week' ? [addDays(t, -6), t] : r === 'month' ? [t.slice(0, 8) + '01', t] : [t, t];
+  $('rpFrom').value = f; $('rpTo').value = to;
+  $('rpQuick').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.r === r));
+}
+let rpText = '';
+async function runReport() {
+  const f = $('rpFrom').value, t = $('rpTo').value;
+  if (!f || !t || f > t) { toast('اختار فترة صحيحة', 'err'); return; }
+  $('rpOut').innerHTML = '<div class="pos-empty">جاري التحميل...</div>';
+  const { data, error } = await fetchAll(() => sb.from('mk_orders').select('*').gte('order_date', f).lte('order_date', t).order('id'));
+  if (error) { console.error(error); $('rpOut').innerHTML = '<div class="pos-empty">تعذر تحميل التقرير</div>'; return; }
+  const ok = data.filter(o => o.status !== 'cancelled'), canc = data.length - ok.length;
+  const sum = (a, k = 'total') => a.reduce((x, o) => x + Number(o[k] || 0), 0);
+  const total = sum(ok), n = ok.length;
+  const pos = ok.filter(isPos), onl = ok.filter(o => !isPos(o));
+  const by = (a, fn) => { const m = {}; a.forEach(o => { const k = fn(o); (m[k] = m[k] || []).push(o); }); return m; };
+  const pay = by(ok, o => o.payment_method), cashiers = by(pos, o => o.cashier || 'غير معروف'), days = by(ok, o => o.order_date);
+  const unpaid = sum(ok.filter(o => o.payment_status !== 'paid'));
+  const drawer = sum(ok.filter(o => o.payment_method === 'cash' && o.payment_status === 'paid'));
+  const items = {};
+  ok.forEach(o => (o.items || []).forEach(i => { const m = items[i.name] = items[i.name] || { q: 0, s: 0 }; m.q += Number(i.qty); m.s += Number(i.price) * Number(i.qty); }));
+  const top = Object.entries(items).sort((a, b) => b[1].s - a[1].s).slice(0, 15);
+  const tbl = (head, rows) => `<div class="tbl-w"><table class="tbl"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  $('rpOut').innerHTML = `<div class="rp-g">${stat('إجمالي المبيعات', EGP(total))}${stat('عدد الفواتير', n)}${stat('متوسط الفاتورة', EGP(n ? total / n : 0))}${stat('إجمالي الخصومات', EGP(sum(ok, 'discount')))}${stat('نقدي في الدرج', EGP(drawer))}${stat('غير محصّل', EGP(unpaid))}${stat('ملغي', canc)}</div>
+    <div class="rp-t"><h3>حسب القناة</h3>${tbl(['القناة', 'عدد', 'المبلغ'], [['الكاشير', pos.length, EGP(sum(pos))], ['الأونلاين', onl.length, EGP(sum(onl))]])}</div>
+    <div class="rp-t"><h3>حسب طريقة الدفع</h3>${tbl(['الطريقة', 'عدد', 'المبلغ'], Object.entries(pay).map(([k, a]) => [PAYN[k] || k, a.length, EGP(sum(a))]))}</div>
+    ${pos.length ? `<div class="rp-t"><h3>حسب الكاشير</h3>${tbl(['الكاشير', 'عدد', 'المبلغ'], Object.entries(cashiers).map(([k, a]) => [esc(k), a.length, EGP(sum(a))]))}</div>` : ''}
+    ${Object.keys(days).length > 1 ? `<div class="rp-t"><h3>حسب اليوم</h3>${tbl(['اليوم', 'عدد', 'المبلغ'], Object.entries(days).sort().map(([k, a]) => [k, a.length, EGP(sum(a))]))}</div>` : ''}
+    <div class="rp-t"><h3>الأكثر مبيعاً</h3>${top.length ? tbl(['الصنف', 'الكمية', 'المبلغ'], top.map(([k, v]) => [esc(k), v.q, EGP(v.s)])) : '<div class="mut">لا توجد بيانات</div>'}</div>`;
+  rpText = [`تقرير ${settings.shop_name || 'المتجر'}`, f === t ? f : `من ${f} إلى ${t}`, '',
+    `إجمالي المبيعات: ${EGP(total)}`, `عدد الفواتير: ${n}`, `متوسط الفاتورة: ${EGP(n ? total / n : 0)}`, `الخصومات: ${EGP(sum(ok, 'discount'))}`,
+    `الكاشير: ${EGP(sum(pos))} (${pos.length})`, `الأونلاين: ${EGP(sum(onl))} (${onl.length})`, '',
+    ...Object.entries(pay).map(([k, a]) => `${PAYN[k] || k}: ${EGP(sum(a))} (${a.length})`), `نقدي في الدرج: ${EGP(drawer)}`, `غير محصّل: ${EGP(unpaid)}`, `ملغي: ${canc}`].join('\n');
+}
+$('rpQuick').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (b) { setRange(b.dataset.r); runReport(); } });
+$('rpGo').addEventListener('click', () => { $('rpQuick').querySelectorAll('.chip').forEach(c => c.classList.remove('on')); runReport(); });
+$('rpCopy').addEventListener('click', async () => {
+  if (!rpText) { toast('اعرض التقرير الأول', 'err'); return; }
+  try { await navigator.clipboard.writeText(rpText); toast('تم نسخ التقرير', 'ok'); } catch (e) { toast('تعذر النسخ', 'err'); }
+});
+setRange('today');
+document.querySelectorAll('.nav[data-tab]').forEach(btn => btn.addEventListener('click', () => {
+  if (btn.dataset.tab === 'pos') { loadPos(); setTimeout(() => $('posSearch').focus(), 50); }
+  if (btn.dataset.tab === 'reports') runReport();
+}));
