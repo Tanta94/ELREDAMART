@@ -178,6 +178,61 @@ body{display:flex}
 
 @media print{#moInv .mo-head{display:none!important}}
 
+/* POS */
+.pos{display:grid;grid-template-columns:1fr 390px;gap:14px;align-items:start}
+.pos-top{display:flex;gap:8px;margin-bottom:10px}
+.pos-top input{flex:1;padding:11px 14px;border-radius:8px;border:2px solid var(--line-g);background:#fff;outline:none;font-size:1rem}
+.pos-top input:focus{border-color:var(--acc)}
+.pos-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;max-height:92px;overflow-y:auto}
+.pos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.pos-p{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;text-align:right;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;gap:6px;min-height:84px;color:var(--ink)}
+.pos-p:hover{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-bg)}
+.pos-p:active{transform:scale(.97)}
+.pos-p b{font-size:.88rem;line-height:1.4;font-weight:600;word-break:break-word}
+.pos-p span{color:var(--acc);font-weight:700}
+.pos-r{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;position:sticky;top:12px;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 24px);overflow-y:auto}
+.pos-h{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.pos-hb{display:flex;gap:4px;flex-wrap:wrap}
+.pos-lines{border:1px solid var(--line);border-radius:8px;min-height:90px;max-height:300px;overflow-y:auto}
+.pos-empty{padding:26px 10px;text-align:center;color:var(--ink3);font-size:.9rem}
+.pl{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:8px 10px;border-bottom:1px solid var(--line);align-items:center}
+.pl:last-child{border-bottom:none}
+.pl-n{font-size:.88rem;font-weight:600;word-break:break-word}
+.pl-t{font-weight:700;text-align:left;white-space:nowrap}
+.pl-c{display:flex;align-items:center;gap:6px;flex-wrap:wrap;grid-column:1/-1}
+.pl input{width:70px;padding:4px 6px;border:1px solid var(--line-g);border-radius:6px;text-align:center;background:#fff}
+.pl .q{display:flex;align-items:center;gap:3px}
+.pl .q button,.pl-x{width:28px;height:28px;border-radius:6px;border:1px solid var(--line-g);background:#fff;cursor:pointer;font-size:1rem;line-height:1}
+.pl-x{color:var(--red);border-color:#e8b7b2;margin-inline-start:auto}
+.pos-sum{display:flex;flex-direction:column;gap:6px}
+.pos-row{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.92rem}
+.pos-row input{width:130px;padding:6px 8px;border:1px solid var(--line-g);border-radius:6px;text-align:center;background:#fff}
+.pos-disc{display:flex;gap:4px}.pos-disc input{width:90px}
+.pos-disc select{padding:6px;border:1px solid var(--line-g);border-radius:6px;background:#fff}
+.pos-tot{font-size:1.3rem;font-weight:700;border-top:2px solid var(--ink);padding-top:8px}
+.pos-tot b{color:var(--acc)}
+.pos-pay{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pos-pay button{padding:10px 4px;border-radius:8px;border:2px solid var(--line-g);background:#fff;cursor:pointer;font-weight:700;color:var(--ink2)}
+.pos-pay button.on{border-color:var(--acc);background:var(--acc-bg);color:var(--acc-d)}
+.pos-cash{display:flex;flex-direction:column;gap:8px}
+.pos-q{display:flex;gap:6px;flex-wrap:wrap}
+.pos-q button{flex:1;padding:6px 4px;border-radius:6px;border:1px solid var(--line-g);background:#fff;cursor:pointer;font-weight:600}
+.pos-chg{font-size:1.05rem}.pos-chg b{color:var(--green)}.pos-chg.neg b{color:var(--red)}
+.pos-cust summary{cursor:pointer;font-size:.88rem;color:var(--ink2)}
+.pos-go{padding:14px;font-size:1.1rem;font-weight:700}
+.hold-i{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.sale-x td{text-decoration:line-through;color:var(--ink3)}
+.rp-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.rp-t{margin-bottom:16px}.rp-t h3{font-size:.95rem;margin-bottom:6px}
+.rp-t .tbl{min-width:0}
+/* receipt */
+.inv.rcpt{max-width:340px;margin-inline:auto;font-size:.84rem;padding:14px}
+.inv.rcpt .inv-head{flex-direction:column;gap:6px}.inv.rcpt .inv-meta{text-align:right}
+.inv.rcpt .inv-tot{width:100%}
+@media print{.inv.rcpt{max-width:none;margin:0}}
+@media(max-width:900px){.pos{grid-template-columns:1fr}.pos-r{order:-1;position:static;max-height:none}}
+
+
 </style>
 </head>
 <body>
@@ -199,10 +254,12 @@ body{display:flex}
 <aside class="sidebar" id="sidebar">
   <div class="sb-brand" id="admName">المتجر</div>
   <nav class="sb-nav">
-    <button class="nav on" data-tab="orders">الطلبات<span class="badge" id="qBadge" style="display:none">0</span></button>
+    <button class="nav on" data-tab="pos">الكاشير</button>
+    <button class="nav" data-tab="orders">الطلبات<span class="badge" id="qBadge" style="display:none">0</span></button>
     <button class="nav" data-tab="products">المنتجات</button>
     <button class="nav" data-tab="categories">الأقسام</button>
     <button class="nav" data-tab="offers">العروض</button>
+    <button class="nav" data-tab="reports">التقارير</button>
     <button class="nav" data-tab="settings">الإعدادات</button>
   </nav>
   <div class="sb-foot">
@@ -215,10 +272,59 @@ body{display:flex}
 
 <div class="main">
 
+  <!-- POS -->
+  <section class="tab-p on" id="tab-pos">
+    <div class="pos">
+      <div class="pos-l">
+        <div class="pos-top">
+          <input id="posSearch" type="search" autocomplete="off" placeholder="ابحث بالاسم أو امسح الباركود  (F2)"/>
+          <button class="btn btn-line" id="posCustom">+ صنف حر</button>
+        </div>
+        <div class="pos-chips" id="posChips"></div>
+        <div class="pos-grid" id="posGrid"></div>
+        <div class="mut" id="posMore" style="margin-top:8px"></div>
+      </div>
+      <div class="pos-r">
+        <div class="pos-h">
+          <b>الفاتورة الحالية</b>
+          <span class="pos-hb">
+            <button class="btn btn-line btn-sm" id="posHold">تعليق</button>
+            <button class="btn btn-line btn-sm" id="posRecall">المعلّقة <span id="posHoldN">0</span></button>
+            <button class="btn btn-red btn-sm" id="posClear">مسح</button>
+          </span>
+        </div>
+        <div class="pos-lines" id="posLines"></div>
+        <div class="pos-sum">
+          <div class="pos-row"><span>المجموع</span><b id="posSub">0</b></div>
+          <div class="pos-row"><span>خصم</span>
+            <span class="pos-disc"><input id="posDisc" type="number" min="0" step="any" placeholder="0"/>
+            <select id="posDiscT"><option value="amt">ج</option><option value="pct">%</option></select></span></div>
+          <div class="pos-row pos-tot"><span>الإجمالي</span><b id="posTot">0</b></div>
+        </div>
+        <div class="pos-pay" id="posPayOpts">
+          <button class="on" data-pay="cash">نقدي</button><button data-pay="card">كارت</button><button data-pay="wallet">محفظة</button>
+        </div>
+        <div class="pos-cash" id="posCash">
+          <div class="pos-row"><span>المبلغ المستلم</span><input id="posRecv" type="number" min="0" step="any" placeholder="الإجمالي بالضبط"/></div>
+          <div class="pos-q" id="posQ"><button data-q="exact">بالضبط</button><button data-q="50">50</button><button data-q="100">100</button><button data-q="200">200</button><button data-q="500">500</button></div>
+          <div class="pos-row pos-chg"><span>الباقي للعميل</span><b id="posChg">0</b></div>
+        </div>
+        <details class="pos-cust"><summary>بيانات العميل (اختياري)</summary>
+          <div class="form" style="margin-top:8px"><div class="fg"><label>الاسم</label><input id="posName"/></div><div class="fg"><label>الهاتف</label><input id="posPhone" type="tel"/></div></div>
+        </details>
+        <button class="btn btn-gold btn-block pos-go" id="posPay">إتمام البيع  (F9)</button>
+      </div>
+    </div>
+    <div class="setbox" style="max-width:none;margin-top:18px">
+      <h3 style="margin-top:0">مبيعات الكاشير اليوم <span class="mut" id="posSalesSum"></span></h3>
+      <div class="tbl-w" id="posSales" style="border:none"></div>
+    </div>
+  </section>
+
   <!-- ORDERS -->
-  <section class="tab-p on" id="tab-orders">
+  <section class="tab-p" id="tab-orders">
     <div class="ph">
-      <div><h1>الطلبات</h1><div class="mut">يتم التحديث تلقائياً كل 10 ثوانٍ، وسيصدر تنبيه عند وصول طلب جديد</div></div>
+      <div><h1>طلبات الأونلاين</h1><div class="mut">يتم التحديث تلقائياً كل 10 ثوانٍ، وسيصدر تنبيه عند وصول طلب جديد</div></div>
       <div class="acts"><button class="btn btn-line" id="btnRefresh">تحديث</button></div>
     </div>
     <div class="stats">
@@ -238,6 +344,7 @@ body{display:flex}
   <section class="tab-p" id="tab-products">
     <div class="ph"><div><h1>المنتجات</h1><div class="mut">«متاح» يعني يمكن طلبه الآن، و«ظاهر» يعني يظهر في صفحة العملاء</div></div>
       <button class="btn btn-gold" onclick="editItem('products')">+ منتج جديد</button></div>
+    <div class="fbar"><input id="prodSearch" type="search" placeholder="بحث بالاسم أو الباركود"/></div>
     <div class="tbl-w" id="list-products"></div>
   </section>
 
@@ -253,6 +360,21 @@ body{display:flex}
     <div class="ph"><div><h1>العروض</h1><div class="mut">تظهر أعلى صفحة العملاء ويمكن إضافتها للسلة</div></div>
       <button class="btn btn-gold" onclick="editItem('offers')">+ عرض جديد</button></div>
     <div class="tbl-w" id="list-offers"></div>
+  </section>
+
+  <!-- REPORTS -->
+  <section class="tab-p" id="tab-reports">
+    <div class="ph"><div><h1>التقارير</h1><div class="mut">مبيعات الكاشير والأونلاين معاً (بدون الطلبات الملغية)</div></div></div>
+    <div class="fbar">
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="rpQuick">
+        <button class="chip on" data-r="today">اليوم</button><button class="chip" data-r="yest">أمس</button>
+        <button class="chip" data-r="week">آخر 7 أيام</button><button class="chip" data-r="month">هذا الشهر</button>
+      </div>
+      <input type="date" id="rpFrom" style="min-width:0"/><span class="mut">إلى</span><input type="date" id="rpTo" style="min-width:0"/>
+      <button class="btn btn-dark btn-sm" id="rpGo">عرض</button>
+      <button class="btn btn-line btn-sm" id="rpCopy">نسخ كنص</button>
+    </div>
+    <div id="rpOut"></div>
   </section>
 
   <!-- SETTINGS -->
@@ -309,6 +431,21 @@ body{display:flex}
     <button class="btn btn-line btn-sm" id="invCopy">نسخ النص</button>
   </div>
   <div class="inv" id="invoice"></div>
+</div></div>
+
+<!-- hold / custom -->
+<div class="mo" id="moHold"><div class="mo-box">
+  <div class="mo-head"><h2>الفواتير المعلّقة</h2><button class="mo-x" onclick="closeMo('moHold')">✕</button></div>
+  <div id="holdList"></div>
+</div></div>
+<div class="mo" id="moCustom"><div class="mo-box">
+  <div class="mo-head"><h2>صنف حر</h2><button class="mo-x" onclick="closeMo('moCustom')">✕</button></div>
+  <div class="form" style="grid-template-columns:1fr">
+    <div class="fg"><label>اسم الصنف *</label><input id="cuName"/></div>
+    <div class="fg"><label>السعر (جنيه) *</label><input id="cuPrice" type="number" min="0" step="any"/></div>
+    <div class="fg"><label>الكمية</label><input id="cuQty" type="number" min="0" step="any" value="1"/></div>
+  </div>
+  <div class="mo-foot"><button class="btn btn-line" onclick="closeMo('moCustom')">إلغاء</button><button class="btn btn-gold" id="cuAdd">إضافة للفاتورة</button></div>
 </div></div>
 
 <!-- item modal (generic) -->
