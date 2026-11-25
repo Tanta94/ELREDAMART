@@ -236,6 +236,10 @@ body{display:block}
 
 .st.ok{background:#dff3e8;color:var(--green)}.st.low{background:#ffe8da;color:#bf4500}.st.out{background:#fde4e1;color:var(--red)}.st.off{background:#eee;color:var(--ink3)}
 .stk-b{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rt-l{display:grid;grid-template-columns:1fr 80px auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.rt-l.done{opacity:.5}
+.rt-l input{padding:5px 6px;border:1px solid var(--line-g);border-radius:6px;text-align:center;background:#fff}
+.ret-b{display:inline-block;background:#ffe8da;color:#bf4500;border-radius:4px;padding:1px 7px;font-size:.74rem;font-weight:600}
 
 
 </style>
@@ -321,7 +325,7 @@ body{display:block}
       </div>
     </div>
     <div class="setbox" style="max-width:none;margin-top:18px">
-      <h3 style="margin-top:0">مبيعات الكاشير اليوم <span class="mut" id="posSalesSum"></span></h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><h3 style="margin:0">مبيعات الكاشير <span class="mut" id="posSalesSum"></span></h3><span><input type="date" id="posDate" style="padding:5px 8px;border:1px solid var(--line-g);border-radius:6px;background:#fff"/> <button class="btn btn-line btn-sm" id="posDateToday">اليوم</button></span></div>
       <div class="tbl-w" id="posSales" style="border:none"></div>
     </div>
   </section>
@@ -446,6 +450,18 @@ body{display:block}
   <div class="inv-paper"><span class="mut">مقاس الطباعة</span>
     <select id="invPaper"><option value="80mm">رول حراري 80mm</option><option value="58mm">رول حراري 58mm</option><option value="A5">A5</option><option value="A4">A4</option></select></div>
   <div class="inv rcpt" id="invoice"></div>
+</div></div>
+
+<!-- return -->
+<div class="mo" id="moReturn"><div class="mo-box">
+  <div class="mo-head"><h2 id="rtTitle">مرتجع</h2><button class="mo-x" onclick="closeMo('moReturn')">✕</button></div>
+  <div class="mut" style="margin-bottom:8px">اكتب الكمية المرتجعة من كل صنف، أو اضغط «الكل».</div>
+  <div id="rtLines"></div>
+  <div class="form" style="grid-template-columns:1fr;margin-top:10px"><div class="fg"><label>سبب المرتجع (اختياري)</label><input id="rtReason"/></div></div>
+  <label class="chk"><input type="checkbox" id="rtRestock" checked/>رجّع الكمية للمخزون (لو المنتج سليم)</label>
+  <div class="pos-row pos-tot" style="margin-top:10px"><span>المبلغ المسترد للعميل</span><b id="rtRefund">0</b></div>
+  <div class="mut" id="rtNote" style="margin-top:4px"></div>
+  <div class="mo-foot"><button class="btn btn-line" onclick="closeMo('moReturn')">إلغاء</button><button class="btn btn-gold" id="rtGo">تأكيد المرتجع</button></div>
 </div></div>
 
 <!-- stock -->
