@@ -195,6 +195,7 @@ function orderCard(o) {
       ${nx ? `<button class="btn btn-gold btn-sm" onclick="setStatus(${o.id},'${nx[0]}')">${nx[1]}</button>` : ''}
       ${o.payment_method === 'wallet' && o.payment_status === 'unpaid' && o.status !== 'cancelled' ? `<button class="btn btn-green btn-sm" onclick="markPaid(${o.id})">تأكيد استلام الدفع</button>` : ''}
       <button class="btn btn-dark btn-sm" onclick="showInvoice(${o.id})">الفاتورة</button>
+      ${o.status === 'delivered' ? `<button class="btn btn-line btn-sm" onclick="openReturn(${o.id})">مرتجع</button>` : ''}
       ${!final ? `<button class="btn btn-red btn-sm" onclick="cancelOrder(${o.id})">إلغاء الطلب</button>` : ''}
     </div>
   </div>`;
@@ -771,20 +772,75 @@ async function posPay() {
 $('posPay').addEventListener('click', posPay);
 
 // مبيعات اليوم
+let posRets = {};
+const posDay = () => $('posDate').value || todayStr();
 async function loadPos() {
-  const { data, error } = await sb.from('mk_orders').select('*').eq('source', 'pos').eq('order_date', todayStr()).order('id', { ascending: false }).limit(300);
+  if (!$('posDate').value) $('posDate').value = todayStr();
+  const day = posDay();
+  const { data, error } = await sb.from('mk_orders').select('*').eq('source', 'pos').eq('order_date', day).order('id', { ascending: false }).limit(300);
   if (error) { posSales = []; $('posSales').innerHTML = '<div class="pos-empty">لتفعيل الكاشير شغّل ملف pos-setup.sql في Supabase</div>'; $('posSalesSum').textContent = ''; return; }
-  posSales = data || []; renderPosSales();
+  posSales = data || [];
+  posRets = {};
+  const rr = await sb.from('mk_returns').select('order_id,refund').eq('order_date', day);   // لو الجدول لسه مش موجود نتجاهل
+  if (!rr.error) (rr.data || []).forEach(r => { posRets[r.order_id] = (posRets[r.order_id] || 0) + Number(r.refund); });
+  renderPosSales();
 }
 function renderPosSales() {
   const ok = posSales.filter(o => o.status !== 'cancelled');
   const tot = ok.reduce((t, o) => t + Number(o.total), 0), cash = ok.filter(o => o.payment_method === 'cash').reduce((t, o) => t + Number(o.total), 0);
-  $('posSalesSum').textContent = ok.length ? `· ${ok.length} عملية · ${EGP(tot)} (نقدي ${EGP(cash)})` : '';
+  const ret = Object.values(posRets).reduce((t, v) => t + v, 0);
+  $('posSalesSum').textContent = ok.length ? `· ${ok.length} عملية · ${EGP(tot)} (نقدي ${EGP(cash)})${ret ? ` · مرتجعات ${EGP(ret)}` : ''}` : '';
   $('posSales').innerHTML = posSales.length ? `<table class="tbl"><thead><tr><th>#</th><th>الوقت</th><th>الأصناف</th><th>الدفع</th><th>الإجمالي</th><th></th></tr></thead><tbody>${
-    posSales.map(o => `<tr class="${o.status === 'cancelled' ? 'sale-x' : ''}"><td>${o.order_no}</td><td>${tm(o.created_at)}</td><td>${(o.items || []).reduce((n, i) => n + Number(i.qty), 0)}</td><td>${PAYN[o.payment_method] || ''}</td><td class="gold">${EGP(o.total)}</td>
-      <td class="r"><button class="btn btn-line btn-sm" onclick="showInvoice(${o.id})">إيصال</button>${o.status === 'cancelled' ? ' <span class="mut">ملغي</span>' : ` <button class="btn btn-red btn-sm" onclick="voidSale(${o.id})">إلغاء</button>`}</td></tr>`).join('')}</tbody></table>`
-    : '<div class="pos-empty">لا توجد مبيعات اليوم</div>';
+    posSales.map(o => `<tr class="${o.status === 'cancelled' ? 'sale-x' : ''}"><td>${o.order_no}</td><td>${tm(o.created_at)}</td><td>${(o.items || []).reduce((n, i) => n + Number(i.qty), 0)}</td><td>${PAYN[o.payment_method] || ''}</td><td class="gold">${EGP(o.total)}${posRets[o.id] ? ` <span class="ret-b">مرتجع ${EGP(posRets[o.id])}</span>` : ''}</td>
+      <td class="r"><button class="btn btn-line btn-sm" onclick="showInvoice(${o.id})">إيصال</button>${o.status === 'cancelled' ? ' <span class="mut">ملغي</span>' : ` <button class="btn btn-line btn-sm" onclick="openReturn(${o.id})">مرتجع</button> <button class="btn btn-red btn-sm" onclick="voidSale(${o.id})">إلغاء</button>`}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="pos-empty">لا توجد مبيعات في اليوم ده</div>';
 }
+$('posDate').addEventListener('change', loadPos);
+$('posDateToday').addEventListener('click', () => { $('posDate').value = todayStr(); loadPos(); });
+
+// المرتجعات
+let rt = null;
+const rtVals = () => [...$('rtLines').querySelectorAll('input[data-k]')].map(i => {
+  const left = Number(i.max), v = Math.min(Math.max(Number(i.value) || 0, 0), left);
+  return { idx: Number(i.dataset.k), qty: r2(v), input: i };
+}).filter(x => x.qty > 0);
+function rtCalc() {
+  const o = rt.o, ratio = Number(o.subtotal) > 0 && Number(o.discount) > 0 ? 1 - Number(o.discount) / Number(o.subtotal) : 1;
+  const sum = rtVals().reduce((t, x) => t + Number(o.items[x.idx].price) * x.qty, 0), refund = r2(sum * ratio);
+  $('rtRefund').textContent = EGP(refund);
+  $('rtNote').textContent = refund > 0 ? `الدفع الأصلي: ${PAYN[o.payment_method] || ''}${Number(o.discount) > 0 ? ' · تم احتساب نصيب الصنف من الخصم' : ''}` : '';
+  $('rtGo').disabled = !(refund > 0 || rtVals().length);
+}
+window.openReturn = async id => {
+  const o = orders.find(x => x.id === id) || posSales.find(x => x.id === id); if (!o) return;
+  if (o.status === 'cancelled') { toast('الفاتورة ملغية', 'err'); return; }
+  const { data, error } = await sb.from('mk_returns').select('items').eq('order_id', id);
+  if (error) { toast('شغّل ملف update-4.sql في Supabase أولاً', 'err', 5000); return; }
+  const prev = {}; (data || []).forEach(r => (r.items || []).forEach(i => { prev[i.idx] = (prev[i.idx] || 0) + Number(i.qty); }));
+  rt = { o };
+  $('rtTitle').textContent = `مرتجع — ${isPos(o) ? 'إيصال' : 'فاتورة'} #${o.order_no}`;
+  $('rtLines').innerHTML = (o.items || []).map((i, k) => {
+    const left = r2(Number(i.qty) - (prev[k] || 0));
+    return `<div class="rt-l ${left <= 0 ? 'done' : ''}"><div><b>${esc(i.name)}</b><div class="mut">${nf(i.price)} × ${i.qty}${prev[k] ? ` · مُرجَع ${prev[k]}` : ''}</div></div>
+      <input type="number" data-k="${k}" min="0" max="${left}" step="any" placeholder="0" ${left <= 0 ? 'disabled' : ''}/><button class="btn btn-line btn-sm" data-all="${k}" ${left <= 0 ? 'disabled' : ''}>الكل</button></div>`;
+  }).join('');
+  $('rtReason').value = ''; $('rtRestock').checked = true; rtCalc(); openMo('moReturn');
+};
+$('rtLines').addEventListener('input', rtCalc);
+$('rtLines').addEventListener('click', e => {
+  const b = e.target.closest('[data-all]'); if (!b) return;
+  const i = $('rtLines').querySelector(`input[data-k="${b.dataset.all}"]`); i.value = i.max; rtCalc();
+});
+$('rtGo').addEventListener('click', async () => {
+  const items = rtVals().map(x => ({ idx: x.idx, qty: x.qty })); if (!items.length || !rt) { toast('اكتب كمية المرتجع', 'err'); return; }
+  $('rtGo').disabled = true;
+  const { data, error } = await sb.rpc('mk_pos_return', { p_order_id: rt.o.id, p_items: items, p_reason: $('rtReason').value.trim() || null, p_restock: $('rtRestock').checked });
+  $('rtGo').disabled = false;
+  if (error) { console.error(error); const m = String(error.message || ''); toast(/does not exist|permission denied|schema cache/i.test(m) ? 'شغّل ملف update-4.sql في Supabase أولاً' : (m || 'تعذر تسجيل المرتجع'), 'err', 5000); return; }
+  closeMo('moReturn');
+  toast(`تم المرتجع — رجّع للعميل ${EGP(data.refund)} (${PAYN[data.method] || ''})`, 'ok', 7000);
+  loadPos(); reloadProducts();
+});
 window.voidSale = async id => {
   if (!confirm('إلغاء عملية البيع دي؟ مش هتتحسب في التقارير.')) return;
   const { error } = await sb.from('mk_orders').update({ status: 'cancelled' }).eq('id', id);
@@ -814,6 +870,8 @@ async function runReport() {
   $('rpOut').innerHTML = '<div class="pos-empty">جاري التحميل...</div>';
   const { data, error } = await fetchAll(() => sb.from('mk_orders').select('*').gte('order_date', f).lte('order_date', t).order('id'));
   if (error) { console.error(error); $('rpOut').innerHTML = '<div class="pos-empty">تعذر تحميل التقرير</div>'; return; }
+  const rq = await fetchAll(() => sb.from('mk_returns').select('*').gte('order_date', f).lte('order_date', t).order('id'));
+  const rets = rq.error ? [] : rq.data;
   const ok = data.filter(o => o.status !== 'cancelled'), canc = data.length - ok.length;
   const sum = (a, k = 'total') => a.reduce((x, o) => x + Number(o[k] || 0), 0);
   const total = sum(ok), n = ok.length;
@@ -821,20 +879,22 @@ async function runReport() {
   const by = (a, fn) => { const m = {}; a.forEach(o => { const k = fn(o); (m[k] = m[k] || []).push(o); }); return m; };
   const pay = by(ok, o => o.payment_method), cashiers = by(pos, o => o.cashier || 'غير معروف'), days = by(ok, o => o.order_date);
   const unpaid = sum(ok.filter(o => o.payment_status !== 'paid'));
-  const drawer = sum(ok.filter(o => o.payment_method === 'cash' && o.payment_status === 'paid'));
+  const refunds = sum(rets, 'refund'), cashRef = sum(rets.filter(r => r.method === 'cash'), 'refund');
+  const drawer = sum(ok.filter(o => o.payment_method === 'cash' && o.payment_status === 'paid')) - cashRef;
   const items = {};
   ok.forEach(o => (o.items || []).forEach(i => { const m = items[i.name] = items[i.name] || { q: 0, s: 0 }; m.q += Number(i.qty); m.s += Number(i.price) * Number(i.qty); }));
   const top = Object.entries(items).sort((a, b) => b[1].s - a[1].s).slice(0, 15);
   const tbl = (head, rows) => `<div class="tbl-w"><table class="tbl"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-  $('rpOut').innerHTML = `<div class="rp-g">${stat('إجمالي المبيعات', EGP(total))}${stat('عدد الفواتير', n)}${stat('متوسط الفاتورة', EGP(n ? total / n : 0))}${stat('إجمالي الخصومات', EGP(sum(ok, 'discount')))}${stat('نقدي في الدرج', EGP(drawer))}${stat('غير محصّل', EGP(unpaid))}${stat('ملغي', canc)}</div>
+  $('rpOut').innerHTML = `<div class="rp-g">${stat('إجمالي المبيعات', EGP(total))}${rets.length ? stat('المرتجعات', EGP(refunds)) + stat('صافي المبيعات', EGP(total - refunds)) : ''}${stat('عدد الفواتير', n)}${stat('متوسط الفاتورة', EGP(n ? total / n : 0))}${stat('إجمالي الخصومات', EGP(sum(ok, 'discount')))}${stat('نقدي في الدرج', EGP(drawer))}${stat('غير محصّل', EGP(unpaid))}${stat('ملغي', canc)}</div>
     <div class="rp-t"><h3>حسب القناة</h3>${tbl(['القناة', 'عدد', 'المبلغ'], [['الكاشير', pos.length, EGP(sum(pos))], ['الأونلاين', onl.length, EGP(sum(onl))]])}</div>
     <div class="rp-t"><h3>حسب طريقة الدفع</h3>${tbl(['الطريقة', 'عدد', 'المبلغ'], Object.entries(pay).map(([k, a]) => [PAYN[k] || k, a.length, EGP(sum(a))]))}</div>
     ${pos.length ? `<div class="rp-t"><h3>حسب الكاشير</h3>${tbl(['الكاشير', 'عدد', 'المبلغ'], Object.entries(cashiers).map(([k, a]) => [esc(k), a.length, EGP(sum(a))]))}</div>` : ''}
     ${Object.keys(days).length > 1 ? `<div class="rp-t"><h3>حسب اليوم</h3>${tbl(['اليوم', 'عدد', 'المبلغ'], Object.entries(days).sort().map(([k, a]) => [k, a.length, EGP(sum(a))]))}</div>` : ''}
+    ${rets.length ? `<div class="rp-t"><h3>المرتجعات</h3>${tbl(['الفاتورة', 'اليوم', 'الأصناف', 'السبب', 'المبلغ'], rets.map(r => ['#' + r.order_no, r.order_date, esc((r.items || []).map(i => i.name + ' ×' + i.qty).join('، ')), esc(r.reason || '—'), EGP(r.refund)]))}</div>` : ''}
     <div class="rp-t"><h3>الأكثر مبيعاً</h3>${top.length ? tbl(['الصنف', 'الكمية', 'المبلغ'], top.map(([k, v]) => [esc(k), v.q, EGP(v.s)])) : '<div class="mut">لا توجد بيانات</div>'}</div>`;
   rpText = [`تقرير ${settings.shop_name || 'المتجر'}`, f === t ? f : `من ${f} إلى ${t}`, '',
-    `إجمالي المبيعات: ${EGP(total)}`, `عدد الفواتير: ${n}`, `متوسط الفاتورة: ${EGP(n ? total / n : 0)}`, `الخصومات: ${EGP(sum(ok, 'discount'))}`,
+    `إجمالي المبيعات: ${EGP(total)}`, ...(rets.length ? [`المرتجعات: ${EGP(refunds)} (${rets.length})`, `صافي المبيعات: ${EGP(total - refunds)}`] : []), `عدد الفواتير: ${n}`, `متوسط الفاتورة: ${EGP(n ? total / n : 0)}`, `الخصومات: ${EGP(sum(ok, 'discount'))}`,
     `الكاشير: ${EGP(sum(pos))} (${pos.length})`, `الأونلاين: ${EGP(sum(onl))} (${onl.length})`, '',
     ...Object.entries(pay).map(([k, a]) => `${PAYN[k] || k}: ${EGP(sum(a))} (${a.length})`), `نقدي في الدرج: ${EGP(drawer)}`, `غير محصّل: ${EGP(unpaid)}`, `ملغي: ${canc}`].join('\n');
 }
