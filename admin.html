@@ -73,18 +73,19 @@ a{color:var(--blue)}
 .avatar img{width:100%;height:100%;object-fit:cover}
 @media(max-width:640px){.form{grid-template-columns:1fr}}
 
-body{display:flex}
-.sidebar{width:210px;flex-shrink:0;background:#2a2a2a;display:flex;flex-direction:column;height:100vh;position:sticky;top:0;overflow-y:auto}
-.sb-brand{padding:16px;border-bottom:1px solid #3a3a3a;font-weight:700;color:#fff}
-.sb-nav{flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:2px}
-.nav{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;border:none;background:transparent;color:#cfcfcf;font-size:.92rem;cursor:pointer;width:100%;text-align:right;text-decoration:none}
+body{display:block}
+.sidebar{position:sticky;top:0;z-index:120;display:flex;flex-direction:row;align-items:center;gap:8px;background:#2a2a2a;padding:0 12px;height:52px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.sidebar::-webkit-scrollbar{display:none}
+.sb-brand{padding:0 8px;font-weight:700;color:#fff;white-space:nowrap}
+.sb-nav{flex:1;display:flex;flex-direction:row;gap:2px;padding:0;min-width:max-content}
+.nav{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;border:none;background:transparent;color:#cfcfcf;font-size:.92rem;cursor:pointer;width:auto;white-space:nowrap;text-align:center;text-decoration:none}
 .nav:hover{background:#363636;color:#fff}
 .nav.on{background:var(--acc);color:#fff;font-weight:700}
-.nav .badge{margin-right:auto;background:var(--red);color:#fff;font-size:.68rem;padding:1px 7px;border-radius:10px}
+.nav .badge{background:var(--red);color:#fff;font-size:.68rem;padding:1px 7px;border-radius:10px}
 .nav.on .badge{background:#fff;color:var(--acc)}
-.sb-foot{padding:8px;border-top:1px solid #3a3a3a}
-.main{flex:1;min-width:0;padding:24px 24px 60px}
-.mob{display:none}
+.sb-foot{display:flex;gap:2px;padding:0}
+.main{padding:16px 18px 50px;max-width:1700px;margin:0 auto}
+.mob,#sbOv{display:none!important}
 
 .tab-p{display:none}.tab-p.on{display:block}
 .ph{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px}
@@ -139,39 +140,42 @@ body{display:flex}
 .login-box h1{font-size:1.25rem;font-weight:700;margin:0 0 4px}
 .login-err{display:none;background:#fde4e1;color:var(--red);border-radius:6px;padding:9px;font-size:.84rem;margin-top:12px}
 
-/* invoice */
-.mo-box.inv-box{max-width:620px}
-.inv-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-.inv{background:#fff;color:#000;border:1px solid var(--line-g);padding:22px;font-size:.92rem}
-.inv-head{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:12px}
-.inv-head h2{font-size:1.3rem}
-.inv-meta{text-align:left;font-size:.86rem;line-height:1.7}
-.inv-cust{font-size:.88rem;line-height:1.8;margin-bottom:12px;white-space:pre-line}
-.inv-t{width:100%;border-collapse:collapse;font-size:.88rem}
-.inv-t th{background:#f0f0f0;text-align:right;padding:6px 8px;border:1px solid #bbb}
-.inv-t td{padding:6px 8px;border:1px solid #ccc}
-.inv-tot{margin:12px 0 0 auto;width:60%;min-width:220px;font-size:.9rem}
-.inv-tot div{display:flex;justify-content:space-between;padding:2px 0}
-.inv-tot .g{border-top:2px solid #000;margin-top:4px;padding-top:6px;font-weight:700;font-size:1.05rem}
-.inv-pay{margin-top:14px;font-size:.86rem}
-.inv-foot{margin-top:18px;text-align:center;font-size:.84rem;color:#555;border-top:1px dashed #aaa;padding-top:10px}
+/* invoice (مضغوطة لتوفير الورق) */
+.mo-box.inv-box{max-width:420px}
+.inv-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.inv-del{display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:var(--acc-bg);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:.88rem}
+.inv-del input{width:80px;padding:5px 8px;border:1px solid var(--line-g);border-radius:6px;text-align:center;background:#fff}
+.inv-fq{display:flex;gap:4px;flex-wrap:wrap}
+.inv-fq button{padding:3px 9px;border-radius:14px;border:1px solid var(--line-g);background:#fff;cursor:pointer;font-size:.8rem}
+.inv-paper{display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:.84rem}
+.inv-paper select{padding:3px 6px;border:1px solid var(--line-g);border-radius:6px;background:#fff}
+.inv{background:#fff;color:#000;border:1px solid var(--line-g);padding:10px 12px;font-size:12px;line-height:1.45;max-width:340px;margin-inline:auto}
+.inv-head{text-align:center;border-bottom:1px dashed #000;padding-bottom:5px;margin-bottom:5px}
+.inv-head h2{font-size:1rem;line-height:1.3}
+.inv-head img{max-height:30px;max-width:110px;margin:0 auto 2px;display:block}
+.inv-meta{font-size:11px;margin-top:2px}
+.inv-cust{font-size:11px;margin-bottom:5px;white-space:pre-line}
+.inv-t{width:100%;border-collapse:collapse;font-size:11.5px}
+.inv-t th{text-align:right;padding:2px 2px;border-bottom:1px solid #000;font-weight:700}
+.inv-t td{padding:2px 2px;border-bottom:1px dotted #999;vertical-align:top}
+.inv-t td:nth-child(n+2),.inv-t th:nth-child(n+2){white-space:nowrap;text-align:left}
+.inv-tot{margin:6px 0 0;width:100%;font-size:12px}
+.inv-tot div{display:flex;justify-content:space-between;padding:1px 0}
+.inv-tot .g{border-top:1px solid #000;margin-top:3px;padding-top:3px;font-weight:700;font-size:13.5px}
+.inv-pay{margin-top:5px;font-size:11px}
+.inv-foot{margin-top:6px;text-align:center;font-size:11px;border-top:1px dashed #000;padding-top:4px}
 
 @media print{
-  @page{margin:12mm}
   body{display:block;background:#fff}
   body>*:not(#moInv){display:none!important}
   #moInv{position:static;display:block;opacity:1;padding:0;background:none}
-  #moInv .mo-box{max-width:none;box-shadow:none;padding:0;max-height:none;overflow:visible}
-  .inv-actions{display:none!important}
-  .inv{border:none;padding:0}
+  #moInv .mo-box{max-width:none;box-shadow:none;padding:0;max-height:none;overflow:visible;border:none}
+  .inv-actions,.inv-del,.inv-paper{display:none!important}
+  .inv{border:none;padding:0;max-width:none;margin:0}
 }
 
 @media(max-width:900px){
-  .sidebar{position:fixed;right:-230px;top:0;z-index:300;transition:right .2s}
-  .sidebar.open{right:0}
-  .mob{display:flex;position:fixed;top:0;inset-inline:0;z-index:200;background:#2a2a2a;color:#fff;padding:10px 16px;align-items:center;justify-content:space-between}
-  .mob button{background:none;border:none;font-size:1.4rem;cursor:pointer;color:#fff}
-  .main{padding:64px 14px 60px}
+  .main{padding:12px 10px 50px}
   .stats{grid-template-columns:repeat(2,1fr)}
   .olist{grid-template-columns:1fr}
 }
@@ -179,7 +183,7 @@ body{display:flex}
 @media print{#moInv .mo-head{display:none!important}}
 
 /* POS */
-.pos{display:grid;grid-template-columns:1fr 390px;gap:14px;align-items:start}
+.pos{display:grid;grid-template-columns:1fr 420px;gap:14px;align-items:start}
 .pos-top{display:flex;gap:8px;margin-bottom:10px}
 .pos-top input{flex:1;padding:11px 14px;border-radius:8px;border:2px solid var(--line-g);background:#fff;outline:none;font-size:1rem}
 .pos-top input:focus{border-color:var(--acc)}
@@ -190,10 +194,13 @@ body{display:flex}
 .pos-p:active{transform:scale(.97)}
 .pos-p b{font-size:.88rem;line-height:1.4;font-weight:600;word-break:break-word}
 .pos-p span{color:var(--acc);font-weight:700}
-.pos-r{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;position:sticky;top:12px;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 24px);overflow-y:auto}
+.pos-p small{font-size:.72rem;color:var(--ink3)}
+.pos-p small.lo{color:#bf4500;font-weight:700}
+.pos-p small.out{color:var(--red);font-weight:700}
+.pos-r{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;position:sticky;top:64px;display:flex;flex-direction:column;gap:10px;height:calc(100vh - 78px);min-height:520px;overflow-y:auto}
 .pos-h{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
 .pos-hb{display:flex;gap:4px;flex-wrap:wrap}
-.pos-lines{border:1px solid var(--line);border-radius:8px;min-height:90px;max-height:300px;overflow-y:auto}
+.pos-lines{border:1px solid var(--line);border-radius:8px;min-height:200px;flex:1 1 auto;overflow-y:auto}
 .pos-empty{padding:26px 10px;text-align:center;color:var(--ink3);font-size:.9rem}
 .pl{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:8px 10px;border-bottom:1px solid var(--line);align-items:center}
 .pl:last-child{border-bottom:none}
@@ -225,18 +232,16 @@ body{display:flex}
 .rp-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
 .rp-t{margin-bottom:16px}.rp-t h3{font-size:.95rem;margin-bottom:6px}
 .rp-t .tbl{min-width:0}
-/* receipt */
-.inv.rcpt{max-width:340px;margin-inline:auto;font-size:.84rem;padding:14px}
-.inv.rcpt .inv-head{flex-direction:column;gap:6px}.inv.rcpt .inv-meta{text-align:right}
-.inv.rcpt .inv-tot{width:100%}
-@media print{.inv.rcpt{max-width:none;margin:0}}
-@media(max-width:900px){.pos{grid-template-columns:1fr}.pos-r{order:-1;position:static;max-height:none}}
+@media(max-width:900px){.pos{grid-template-columns:1fr}.pos-r{order:-1;position:static;height:auto;min-height:0}.pos-lines{max-height:380px;flex:none}}
+
+.st.ok{background:#dff3e8;color:var(--green)}.st.low{background:#ffe8da;color:#bf4500}.st.out{background:#fde4e1;color:var(--red)}.st.off{background:#eee;color:var(--ink3)}
+.stk-b{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 
 
 </style>
 </head>
 <body>
-<div id="tc" style="top:20px"></div>
+<div id="tc" style="top:64px"></div>
 
 <!-- LOGIN -->
 <div class="login" id="loginScreen">
@@ -342,9 +347,10 @@ body{display:flex}
 
   <!-- PRODUCTS -->
   <section class="tab-p" id="tab-products">
-    <div class="ph"><div><h1>المنتجات</h1><div class="mut">«متاح» يعني يمكن طلبه الآن، و«ظاهر» يعني يظهر في صفحة العملاء</div></div>
+    <div class="ph"><div><h1>المنتجات والمخزون</h1><div class="mut">«متاح» يعني يمكن طلبه الآن، و«ظاهر» يعني يظهر في صفحة العملاء. المخزون الفاضي = غير متابَع</div></div>
       <button class="btn btn-gold" onclick="editItem('products')">+ منتج جديد</button></div>
-    <div class="fbar"><input id="prodSearch" type="search" placeholder="بحث بالاسم أو الباركود"/></div>
+    <div class="stats" id="stkStats"></div>
+    <div class="fbar"><div id="stkChips" style="display:flex;gap:6px;flex-wrap:wrap"></div><input id="prodSearch" type="search" placeholder="بحث بالاسم أو الباركود"/></div>
     <div class="tbl-w" id="list-products"></div>
   </section>
 
@@ -400,12 +406,13 @@ body{display:flex}
       </div>
       <label class="chk" style="margin-top:8px"><input type="checkbox" class="tog" id="setAcc"/>استقبال الطلبات</label>
 
-      <h3>التوصيل</h3>
+      <h3>الطلبات والتوصيل</h3>
       <div class="form">
-        <div class="fg"><label>مصاريف التوصيل (جنيه)</label><input id="setFee" type="number" min="0" step="any"/></div>
-        <div class="fg"><label>الحد الأدنى للطلب (0 = بدون)</label><input id="setMin" type="number" min="0" step="any"/></div>
-        <div class="fg full"><label>توصيل مجاني للطلبات أكبر من (0 = غير مفعّل)</label><input id="setFree" type="number" min="0" step="any"/></div>
+        <div class="fg"><label>أقل رسوم توصيل (تظهر للعميل)</label><input id="setDMin" type="number" min="0" step="any"/></div>
+        <div class="fg"><label>أعلى رسوم توصيل (تظهر للعميل)</label><input id="setDMax" type="number" min="0" step="any"/></div>
+        <div class="fg full"><label>الحد الأدنى للطلب (0 = بدون)</label><input id="setMin" type="number" min="0" step="any"/></div>
       </div>
+      <div class="mut" style="margin-top:6px">رسوم التوصيل الفعلية بتحددها بنفسك لكل طلب من نافذة الفاتورة، وبتتضاف على الإجمالي. العميل بيشوف المدى ده بس كتنبيه.</div>
 
       <h3>الدفع</h3>
       <label class="chk"><input type="checkbox" class="tog" id="setCash"/>الدفع نقداً عند الاستلام</label>
@@ -430,7 +437,27 @@ body{display:flex}
     <button class="btn btn-green btn-sm" id="invWa">إرسال للعميل واتساب</button>
     <button class="btn btn-line btn-sm" id="invCopy">نسخ النص</button>
   </div>
-  <div class="inv" id="invoice"></div>
+  <div class="inv-del hide" id="invDel">
+    <b>رسوم التوصيل</b>
+    <input id="invFee" type="number" min="0" step="any" placeholder="0"/>
+    <span class="inv-fq" id="invFq"></span>
+    <button class="btn btn-dark btn-sm" id="invFeeBtn">تطبيق على الفاتورة</button>
+  </div>
+  <div class="inv-paper"><span class="mut">مقاس الطباعة</span>
+    <select id="invPaper"><option value="80mm">رول حراري 80mm</option><option value="58mm">رول حراري 58mm</option><option value="A5">A5</option><option value="A4">A4</option></select></div>
+  <div class="inv rcpt" id="invoice"></div>
+</div></div>
+
+<!-- stock -->
+<div class="mo" id="moStock"><div class="mo-box">
+  <div class="mo-head"><h2 id="stkTitle">المخزون</h2><button class="mo-x" onclick="closeMo('moStock')">✕</button></div>
+  <div class="mut" id="stkCur" style="margin-bottom:12px"></div>
+  <div class="form" style="grid-template-columns:1fr">
+    <div class="fg"><label>كمية واردة (توريد)</label><div style="display:flex;gap:8px"><input id="stkAdd" type="number" step="any" placeholder="مثال: 24"/><button class="btn btn-gold" id="stkAddBtn">إضافة</button></div></div>
+    <div class="fg"><label>ضبط الكمية بعد الجرد</label><div style="display:flex;gap:8px"><input id="stkSet" type="number" step="any" placeholder="الكمية الفعلية"/><button class="btn btn-line" id="stkSetBtn">ضبط</button></div></div>
+    <div class="fg"><label>تنبيه لما الكمية توصل لـ</label><div style="display:flex;gap:8px"><input id="stkLow" type="number" min="0" step="any"/><button class="btn btn-line" id="stkLowBtn">حفظ</button></div></div>
+  </div>
+  <div class="mo-foot"><button class="btn btn-red btn-sm" id="stkOff">إيقاف متابعة المخزون لهذا المنتج</button></div>
 </div></div>
 
 <!-- hold / custom -->
