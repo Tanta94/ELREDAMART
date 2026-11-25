@@ -119,7 +119,7 @@ async function loadOrders(initial) {
   orders = data || [];
   const max = orders.reduce((m, o) => Math.max(m, o.id), 0);
   if (knownMax !== null && orders.some(o => o.id > knownMax && o.status === 'new')) {
-    beep(); toast('وصل طلب جديد', 'ok', 4000);
+    beep(); toast('وصل طلب جديد', 'ok', 4000); reloadProducts();
   }
   knownMax = max;
   renderOrders();
@@ -186,7 +186,7 @@ function orderCard(o) {
         ${items.map(i => `<tr><td>${esc(i.name)}</td><td>${EGP(i.price)}</td><td>${i.qty}</td><td>${EGP(i.price * i.qty)}</td></tr>`).join('')}</table>
       ${o.notes ? `<div class="ord-note">ملاحظات العميل: ${esc(o.notes)}</div>` : ''}
       <div class="tl"><span>المنتجات</span><span>${EGP(o.subtotal)}</span></div>
-      <div class="tl"><span>التوصيل</span><span>${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'}</span></div>
+      <div class="tl"><span>التوصيل</span><span>${o.delivery_fee > 0 ? EGP(o.delivery_fee) : `<a href="#" onclick="showInvoice(${o.id});return false">حدّد رسوم التوصيل</a>`}</span></div>
       <div class="ord-tot"><span>الإجمالي</span><span class="gold">${EGP(o.total)}</span></div>
       <div class="blk-t">الدفع</div>
       <div>${payText(o)}</div>
@@ -202,31 +202,48 @@ function orderCard(o) {
 
 /* ══ INVOICE ══ */
 let curInv = null;
+const paperPref = () => { try { return localStorage.getItem('mk_paper') || '80mm'; } catch (e) { return '80mm'; } };
+$('invPaper').addEventListener('change', e => { try { localStorage.setItem('mk_paper', e.target.value); } catch (x) {} });
+$('invFq').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) $('invFee').value = b.dataset.v === '0' ? '' : b.dataset.v; });
+$('invFeeBtn').addEventListener('click', async () => {
+  const o = curInv; if (!o || isPos(o)) return;
+  const fee = Number($('invFee').value) || 0;
+  if (fee < 0) { toast('الرسوم غير صحيحة', 'err'); return; }
+  const { data, error } = await sb.rpc('mk_set_delivery', { p_id: o.id, p_fee: fee });
+  if (error) { console.error(error); toast(/does not exist|permission denied|schema cache/i.test(error.message || '') ? 'شغّل ملف update-3.sql في Supabase أولاً' : (error.message || 'تعذر الحفظ'), 'err', 5000); return; }
+  if (!data) return;
+  o.delivery_fee = data.delivery_fee; o.total = data.total;
+  $('invoice').innerHTML = invoiceHtml(o);
+  toast(fee > 0 ? 'تمت إضافة رسوم التوصيل للفاتورة' : 'تم حذف رسوم التوصيل', 'ok');
+  loadOrders(false);
+});
 const isPos = o => o.source === 'pos';
 const payPlain = o => o.payment_method === 'card' ? 'كارت'
   : o.payment_method === 'wallet'
     ? `محفظة إلكترونية${o.payment_status === 'paid' ? ' (تم الدفع)' : ' (لم يتم تأكيد الدفع)'}`
     : isPos(o) ? 'نقدي' : `نقداً عند الاستلام${o.payment_status === 'paid' ? ' (تم التحصيل)' : ''}`;
 const hasCust = o => !isPos(o) || o.customer_name !== 'عميل نقدي' || (o.customer_phone && o.customer_phone !== '-');
+const nf = v => Number(v || 0).toLocaleString('ar-EG');
 function invoiceHtml(o) {
   const shop = settings.shop_name || 'المتجر';
   const wa = (settings.whatsapp || '').replace(/\D/g, '');
+  const pos = isPos(o), fee = Number(o.delivery_fee) || 0, disc = Number(o.discount) || 0;
   return `<div class="inv-head">
-      <div>${settings.logo_url ? `<img src="${esc(settings.logo_url)}" alt="" style="max-height:48px;max-width:130px;display:block;margin-bottom:6px"/>` : ''}<h2>${esc(shop)}</h2>${wa ? `<div style="font-size:.84rem;direction:ltr;text-align:right">+${wa}</div>` : ''}</div>
-      <div class="inv-meta"><b>${isPos(o) ? 'إيصال' : 'فاتورة'} رقم #${o.order_no}</b><br>${fullDate(o.created_at)}</div>
+      ${settings.logo_url ? `<img src="${esc(settings.logo_url)}" alt=""/>` : ''}<h2>${esc(shop)}</h2>${wa ? `<div style="font-size:11px;direction:ltr">+${wa}</div>` : ''}
+      <div class="inv-meta"><b>${pos ? 'إيصال' : 'فاتورة'} #${o.order_no}</b> · ${fullDate(o.created_at)}</div>
     </div>
-    ${hasCust(o) ? `<div class="inv-cust"><b>العميل:</b> ${esc(o.customer_name)}${o.customer_phone && o.customer_phone !== '-' ? `\n<b>الهاتف:</b> <span dir="ltr">${esc(o.customer_phone)}</span>` : ''}${isPos(o) ? '' : `\n<b>العنوان:</b> ${esc(o.address)}`}</div>` : ''}
-    <table class="inv-t"><tr><th>#</th><th>الصنف</th><th>السعر</th><th>الكمية</th><th>الإجمالي</th></tr>
-      ${(o.items || []).map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.name)}</td><td>${EGP(i.price)}</td><td>${i.qty}</td><td>${EGP(i.price * i.qty)}</td></tr>`).join('')}</table>
+    ${hasCust(o) ? `<div class="inv-cust"><b>العميل:</b> ${esc(o.customer_name)}${o.customer_phone && o.customer_phone !== '-' ? ` · <span dir="ltr">${esc(o.customer_phone)}</span>` : ''}${pos ? '' : `\n<b>العنوان:</b> ${esc(o.address)}`}</div>` : ''}
+    <table class="inv-t"><tr><th>الصنف</th><th>كمية</th><th>سعر</th><th>إجمالي</th></tr>
+      ${(o.items || []).map(i => `<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${nf(i.price)}</td><td>${nf(i.price * i.qty)}</td></tr>`).join('')}</table>
     <div class="inv-tot">
-      <div><span>المنتجات</span><span>${EGP(o.subtotal)}</span></div>
-      ${isPos(o) ? '' : `<div><span>التوصيل</span><span>${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'}</span></div>`}
-      ${Number(o.discount) > 0 ? `<div><span>الخصم</span><span>- ${EGP(o.discount)}</span></div>` : ''}
+      ${fee > 0 || disc > 0 ? `<div><span>المنتجات</span><span>${EGP(o.subtotal)}</span></div>` : ''}
+      ${fee > 0 ? `<div><span>خدمة التوصيل</span><span>${EGP(fee)}</span></div>` : ''}
+      ${disc > 0 ? `<div><span>الخصم</span><span>- ${EGP(disc)}</span></div>` : ''}
       <div class="g"><span>الإجمالي</span><span>${EGP(o.total)}</span></div>
-      ${isPos(o) && o.payment_method === 'cash' && o.received != null ? `<div><span>المستلم</span><span>${EGP(o.received)}</span></div><div><span>الباقي</span><span>${EGP(Number(o.received) - Number(o.total))}</span></div>` : ''}
+      ${pos && o.payment_method === 'cash' && o.received != null ? `<div><span>المستلم</span><span>${EGP(o.received)}</span></div><div><span>الباقي</span><span>${EGP(Number(o.received) - Number(o.total))}</span></div>` : ''}
     </div>
-    <div class="inv-pay"><b>طريقة الدفع:</b> ${payPlain(o)}</div>
-    <div class="inv-foot">شكراً لتعاملكم معنا</div>`;
+    <div class="inv-pay">الدفع: ${payPlain(o)}</div>
+    <div class="inv-foot">${pos ? 'شكراً لزيارتكم' : 'شكراً لتعاملكم معنا'}</div>`;
 }
 function invText(o) {
   const shop = settings.shop_name || 'المتجر';
@@ -235,7 +252,7 @@ function invText(o) {
     hasCust(o) ? `العميل: ${o.customer_name}` : null, hasCust(o) && o.customer_phone !== '-' ? `الهاتف: ${o.customer_phone}` : null, isPos(o) ? null : `العنوان: ${o.address}`,
     o.lat != null ? `الموقع: https://www.google.com/maps?q=${o.lat},${o.lng}` : null, '',
     'الطلب:', ...(o.items || []).map(i => `${i.qty} × ${i.name} = ${EGP(i.price * i.qty)}`), '',
-    `المنتجات: ${EGP(o.subtotal)}`, isPos(o) ? null : `التوصيل: ${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'}`,
+    `المنتجات: ${EGP(o.subtotal)}`, Number(o.delivery_fee) > 0 ? `خدمة التوصيل: ${EGP(o.delivery_fee)}` : null,
     Number(o.discount) > 0 ? `الخصم: ${EGP(o.discount)}` : null,
     `الإجمالي: ${EGP(o.total)}`, `الدفع: ${payPlain(o)}`, '', isPos(o) ? 'شكراً لزيارتكم' : 'شكراً لطلبكم',
   ].filter(x => x !== null).join('\n');
@@ -244,6 +261,15 @@ window.showInvoice = id => {
   const o = orders.find(x => x.id === id) || posSales.find(x => x.id === id); if (!o) return;
   curInv = o; $('invoice').innerHTML = invoiceHtml(o); $('invoice').classList.toggle('rcpt', isPos(o));
   $('invWa').style.display = hasCust(o) && o.customer_phone && o.customer_phone !== '-' ? '' : 'none';
+  const canFee = !isPos(o) && o.status !== 'cancelled';
+  $('invDel').classList.toggle('hide', !canFee);
+  if (canFee) {
+    $('invFee').value = Number(o.delivery_fee) > 0 ? Number(o.delivery_fee) : '';
+    const a = Number(settings.delivery_min) || 0, b = Number(settings.delivery_max) || 0, vals = [0];
+    if (a && b && b >= a) for (let v = a; v <= b && vals.length < 12; v += 5) vals.push(v); else vals.push(15, 20, 25, 30, 35);
+    $('invFq').innerHTML = vals.map(v => `<button type="button" data-v="${v}">${v === 0 ? 'بدون' : v}</button>`).join('');
+  }
+  $('invPaper').value = paperPref();
   openMo('moInv');
 };
 async function invFile(o) {
@@ -253,12 +279,14 @@ async function invFile(o) {
   return blob ? new File([blob], `invoice-${o.order_no}.png`, { type: 'image/png' }) : null;
 }
 $('invPrint').addEventListener('click', () => {
-  // إيصال الكاشير بمقاس ورق الطابعة الحرارية 80mm
-  if (curInv && isPos(curInv)) {
-    const st = document.createElement('style'); st.textContent = '@page{size:80mm auto;margin:3mm}'; document.head.appendChild(st);
-    const done = () => { st.remove(); window.removeEventListener('afterprint', done); };
-    window.addEventListener('afterprint', done);
-  }
+  const p = paperPref(), thermal = p.endsWith('mm');
+  const st = document.createElement('style');
+  st.textContent = `@page{size:${thermal ? p + ' auto' : p};margin:${thermal ? '2mm' : '8mm'}}`
+    + (p === '58mm' ? '.inv{font-size:10px!important}.inv-t{font-size:10px!important}' : '')
+    + (thermal ? '' : '.inv{max-width:105mm!important;margin:0 auto!important}');
+  document.head.appendChild(st);
+  const done = () => { st.remove(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
   window.print();
 });
 $('invImg').addEventListener('click', async () => {
@@ -314,12 +342,57 @@ const thumb = u => u ? `<img class="thumb" src="${esc(u)}" alt="" loading="lazy"
 const tog = (key, id, field, v) => `<input type="checkbox" class="tog" ${v ? 'checked' : ''} onchange="toggleField('${key}',${id},'${field}',this.checked)"/>`;
 const actions = (key, id) => `<td class="r"><button class="btn btn-line btn-sm" onclick="editItem('${key}',${id})">تعديل</button> <button class="btn btn-red btn-sm" onclick="delItem('${key}',${id})">حذف</button></td>`;
 
+const num = v => Number(v).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+const trk = p => p.stock !== null && p.stock !== undefined && p.stock !== '';
+const stkState = p => !trk(p) ? 'off' : Number(p.stock) <= 0 ? 'out' : Number(p.stock) <= Number(p.low_stock ?? 5) ? 'low' : 'ok';
+const STK_L = { ok: 'متوفر', low: 'قرب يخلص', out: 'نفد', off: 'غير متابَع' };
+let stkFilter = 'all';
+const stockCell = r => `<div class="stk-b">${trk(r) ? `<b>${num(r.stock)}</b>` : ''}<span class="st ${stkState(r)}">${STK_L[stkState(r)]}</span><button class="btn btn-line btn-sm" onclick="stockDlg(${r.id})">${trk(r) ? 'توريد / جرد' : 'تتبّع'}</button></div>`;
+function renderStockBar() {
+  const c = { all: prods.length, low: 0, out: 0, off: 0, ok: 0 }; let val = 0;
+  prods.forEach(p => { const st = stkState(p); c[st]++; if (st === 'ok' || st === 'low') val += Number(p.stock) * Number(p.price); });
+  const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  $('stkStats').innerHTML = stat('أصناف متابَعة', c.all - c.off) + stat('قرب يخلص', c.low) + stat('نفد', c.out) + stat('قيمة المخزون (بسعر البيع)', EGP(val));
+  $('stkChips').innerHTML = [['all', 'الكل'], ['low', 'قرب يخلص'], ['out', 'نفد'], ['ok', 'متوفر'], ['off', 'غير متابَع']].map(([k, l]) => `<button class="chip ${stkFilter === k ? 'on' : ''}" data-f="${k}">${l} (${c[k]})</button>`).join('');
+}
+$('stkChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) { stkFilter = b.dataset.f; renderLists(); } });
+
+async function reloadProducts() {
+  const { data, error } = await fetchAll(() => sb.from('mk_products').select('*').order('sort').order('id'));
+  if (error || !data) return;
+  prods = data; renderLists(); renderPos();
+}
+let stkId = null;
+const stkErr = e => { console.error(e); toast(/does not exist|permission denied|schema cache|column/i.test(e.message || '') ? 'شغّل ملف update-3.sql في Supabase أولاً' : (e.message || 'تعذر الحفظ'), 'err', 5000); };
+window.stockDlg = id => {
+  const p = prods.find(x => x.id === id); if (!p) return;
+  stkId = id; $('stkTitle').textContent = p.name;
+  $('stkCur').textContent = trk(p) ? `الكمية الحالية: ${num(p.stock)} · الحالة: ${STK_L[stkState(p)]}` : 'المنتج غير متابَع، أضف كمية أو اضبطها لبدء المتابعة.';
+  $('stkAdd').value = ''; $('stkSet').value = ''; $('stkLow').value = p.low_stock ?? 5;
+  $('stkOff').style.display = trk(p) ? '' : 'none';
+  openMo('moStock'); setTimeout(() => $('stkAdd').focus(), 50);
+};
+$('stkAddBtn').addEventListener('click', async () => {
+  const v = Number($('stkAdd').value); if (!$('stkAdd').value || !isFinite(v) || v === 0) { toast('اكتب الكمية', 'err'); return; }
+  const { error } = await sb.rpc('mk_stock_add', { p_id: stkId, p_delta: v });
+  if (error) return stkErr(error);
+  closeMo('moStock'); toast('تم تحديث المخزون', 'ok'); reloadProducts();
+});
+const stkUpdate = async patch => {
+  const { error } = await sb.from('mk_products').update(patch).eq('id', stkId);
+  if (error) return stkErr(error);
+  closeMo('moStock'); toast('تم الحفظ', 'ok'); reloadProducts();
+};
+$('stkSetBtn').addEventListener('click', () => { const v = Number($('stkSet').value); if (!$('stkSet').value || !isFinite(v)) { toast('اكتب الكمية الفعلية', 'err'); return; } stkUpdate({ stock: v }); });
+$('stkLowBtn').addEventListener('click', () => { const v = Number($('stkLow').value); if (!(v >= 0)) { toast('رقم غير صحيح', 'err'); return; } stkUpdate({ low_stock: v }); });
+$('stkOff').addEventListener('click', () => { if (confirm('إيقاف متابعة المخزون لهذا المنتج؟')) stkUpdate({ stock: null }); });
+
 const CFG = {
   products: {
     label: 'منتج',
-    fields: [['name', 'اسم المنتج', 'text', 1], ['barcode', 'الباركود (اختياري)', 'text'], ['category_id', 'القسم', 'cat'], ['description', 'الوصف', 'text'], ['price', 'السعر (جنيه)', 'number', 1], ['old_price', 'السعر قبل الخصم (اختياري)', 'number'], ['image_url', 'صورة المنتج', 'image'], ['sort', 'الترتيب', 'number']],
-    head: ['', 'المنتج', 'السعر', 'متاح', 'ظاهر', ''],
-    row: r => `<td>${thumb(r.image_url)}</td><td><b>${esc(r.name)}</b><div class="mut">${esc(catName(r.category_id))}</div></td><td class="gold">${EGP(r.price)}${r.old_price ? ` <s class="mut">${EGP(r.old_price)}</s>` : ''}</td><td>${tog('products', r.id, 'available', r.available)}</td><td>${tog('products', r.id, 'active', r.active)}</td>${actions('products', r.id)}`,
+    fields: [['name', 'اسم المنتج', 'text', 1], ['barcode', 'الباركود (اختياري)', 'text'], ['category_id', 'القسم', 'cat'], ['description', 'الوصف', 'text'], ['price', 'السعر (جنيه)', 'number', 1], ['old_price', 'السعر قبل الخصم (اختياري)', 'number'], ['stock', 'الكمية في المخزن (فاضي = بدون متابعة)', 'number'], ['low_stock', 'تنبيه "قرب يخلص" عند', 'number'], ['image_url', 'صورة المنتج', 'image'], ['sort', 'الترتيب', 'number']],
+    head: ['', 'المنتج', 'السعر', 'المخزون', 'متاح', 'ظاهر', ''],
+    row: r => `<td>${thumb(r.image_url)}</td><td><b>${esc(r.name)}</b><div class="mut">${esc(catName(r.category_id))}</div></td><td class="gold">${EGP(r.price)}${r.old_price ? ` <s class="mut">${EGP(r.old_price)}</s>` : ''}</td><td>${stockCell(r)}</td><td>${tog('products', r.id, 'available', r.available)}</td><td>${tog('products', r.id, 'active', r.active)}</td>${actions('products', r.id)}`,
   },
   categories: {
     label: 'قسم',
@@ -341,7 +414,10 @@ function renderLists() {
     let more = 0;
     if (key === 'products') {
       const q = ($('prodSearch') ? $('prodSearch').value : '').trim().toLowerCase();
+      renderStockBar();
       if (q) list = list.filter(p => p.name.toLowerCase().includes(q) || (p.barcode || '').includes(q));
+      if (stkFilter !== 'all') list = list.filter(p => stkState(p) === stkFilter);
+      if (stkFilter === 'low' || stkFilter === 'out') list = list.slice().sort((a, b) => Number(a.stock) - Number(b.stock));
       if (list.length > 300) { more = list.length - 300; list = list.slice(0, 300); }
     }
     $('list-' + key).innerHTML = `<table class="tbl"><thead><tr>${cfg.head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${
@@ -442,6 +518,7 @@ $('btnSaveItem').addEventListener('click', async () => {
     payload[k] = t === 'number' ? (raw === '' ? null : Number(raw)) : t === 'cat' ? (raw ? Number(raw) : null) : (raw || null);
   }
   if ('sort' in payload && payload.sort === null) payload.sort = 0;
+  if ('low_stock' in payload && payload.low_stock === null) payload.low_stock = 5;
   if ('price' in payload && payload.price < 0) { toast('السعر غير صحيح', 'err'); return; }
   const { error } = await (id ? sb.from(T[key]).update(payload).eq('id', id) : sb.from(T[key]).insert([payload]));
   if (error) { console.error(error); toast('تعذر الحفظ، تأكد من البيانات', 'err', 4500); return; }
@@ -453,9 +530,9 @@ function renderSettings() {
   $('setName').value = settings.shop_name || '';
   $('setWa').value = settings.whatsapp || '';
   $('setAcc').checked = settings.accepting !== 'false';
-  $('setFee').value = settings.delivery_fee ?? 0;
+  $('setDMin').value = settings.delivery_min ?? 15;
+  $('setDMax').value = settings.delivery_max ?? 35;
   $('setMin').value = settings.min_order ?? 0;
-  $('setFree').value = settings.free_over ?? 0;
   $('setCash').checked = settings.cash_enabled !== 'false';
   $('setWallet').checked = settings.wallet_enabled !== 'false';
   $('setWName').value = settings.wallet_name || '';
@@ -476,15 +553,15 @@ $('logoFile').addEventListener('change', async () => {
   catch (e) { console.error('logo upload', e); toast('تعذر رفع الشعار', 'err'); }
   $('logoFile').value = '';
 });
-const num = id => String(Math.max(0, Number($(id).value) || 0));
+const snum = id => String(Math.max(0, Number($(id).value) || 0));
 $('btnSaveSet').addEventListener('click', async () => {
   const rows = [
     { key: 'shop_name', value: $('setName').value.trim() || 'المتجر' },
     { key: 'whatsapp', value: $('setWa').value.trim() },
     { key: 'accepting', value: $('setAcc').checked ? 'true' : 'false' },
-    { key: 'delivery_fee', value: num('setFee') },
-    { key: 'min_order', value: num('setMin') },
-    { key: 'free_over', value: num('setFree') },
+    { key: 'delivery_min', value: snum('setDMin') },
+    { key: 'delivery_max', value: snum('setDMax') },
+    { key: 'min_order', value: snum('setMin') },
     { key: 'cash_enabled', value: $('setCash').checked ? 'true' : 'false' },
     { key: 'wallet_enabled', value: $('setWallet').checked ? 'true' : 'false' },
     { key: 'wallet_name', value: $('setWName').value.trim() },
@@ -532,7 +609,7 @@ function renderPosChips() {
 function renderPosGrid() {
   const list = posList(), CAP = 120;
   $('posGrid').innerHTML = list.length
-    ? list.slice(0, CAP).map(p => `<button class="pos-p" data-id="${p.id}"><b>${esc(p.name)}</b><span>${EGP(p.price)}</span></button>`).join('')
+    ? list.slice(0, CAP).map(p => `<button class="pos-p" data-id="${p.id}"><b>${esc(p.name)}</b><span>${EGP(p.price)}</span>${trk(p) ? `<small class="${stkState(p) === 'out' ? 'out' : stkState(p) === 'low' ? 'lo' : ''}">${stkState(p) === 'out' ? 'نفد' : 'متبقي ' + num(p.stock)}</small>` : ''}</button>`).join('')
     : '<div class="empty">لا توجد منتجات مطابقة</div>';
   $('posMore').textContent = list.length > CAP ? `يظهر أول ${CAP} من ${list.length} منتج، اكتب في البحث لتضييق النتائج` : '';
 }
@@ -570,12 +647,14 @@ function addLine(p) {
   const key = 'p' + p.id, ex = pc.lines.find(l => l.key === key && l.price === Number(p.price));
   if (ex) ex.qty = r2(ex.qty + 1);
   else pc.lines.push({ key, id: p.id, name: p.name, price: Number(p.price), base: Number(p.price), qty: 1 });
+  const tot = pc.lines.filter(l => l.id === p.id).reduce((t, l) => t + l.qty, 0);
+  if (trk(p) && tot > Number(p.stock)) toast(`تنبيه: المخزون المسجّل من «${p.name}» ${num(p.stock)} فقط`, 'err', 3500);
   savePos(); renderPosCart();
 }
 $('posGrid').addEventListener('click', e => {
   const b = e.target.closest('.pos-p'); if (!b) return;
   const p = prods.find(x => x.id === Number(b.dataset.id)); if (p) addLine(p);
-  $('posSearch').focus();
+  $('posSearch').value = ''; renderPosGrid(); $('posSearch').focus();   // خلّصت المنتج، امسح البحث
 });
 $('posChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; pc.cat = b.dataset.c; renderPosChips(); renderPosGrid(); });
 $('posSearch').addEventListener('input', renderPosGrid);
@@ -586,7 +665,7 @@ $('posSearch').addEventListener('keydown', e => {
   const v = e.target.value.trim(); if (!v) return;
   const hit = prods.find(p => p.active && p.available && barcodes(p).includes(v)) || (posList().length === 1 ? posList()[0] : null);
   if (hit) { addLine(hit); e.target.value = ''; renderPosGrid(); }
-  else { toast('مفيش منتج بالاسم أو الباركود ده', 'err'); }
+  else { toast('مفيش منتج بالاسم أو الباركود ده', 'err'); e.target.value = ''; renderPosGrid(); }
 });
 
 $('posLines').addEventListener('click', e => {
@@ -685,6 +764,7 @@ async function posPay() {
   const chg = Number(data.change) || 0;
   posReset();
   toast(cash && chg > 0 ? `تم البيع — الباقي ${EGP(chg)}` : 'تم البيع', 'ok', 4000);
+  reloadProducts();
   await loadPos();
   showInvoice(data.id);
 }
@@ -766,6 +846,7 @@ $('rpCopy').addEventListener('click', async () => {
 });
 setRange('today');
 document.querySelectorAll('.nav[data-tab]').forEach(btn => btn.addEventListener('click', () => {
+  if (btn.dataset.tab === 'pos' || btn.dataset.tab === 'products') reloadProducts();
   if (btn.dataset.tab === 'pos') { loadPos(); setTimeout(() => $('posSearch').focus(), 50); }
   if (btn.dataset.tab === 'reports') runReport();
 }));
