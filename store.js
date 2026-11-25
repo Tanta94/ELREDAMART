@@ -36,7 +36,10 @@ let geo = null, payMethod = 'cash';
 
 const getItem = (type, id) => type === 'offer' ? offers.find(x => x.id === id) : products.find(x => x.id === id);
 const itemName = it => it.title || it.name;
-const isAvail = (type, it) => type === 'offer' ? true : it.available;
+const tracked = it => it.stock !== null && it.stock !== undefined && it.stock !== '';
+const stockOf = it => tracked(it) ? Number(it.stock) : Infinity;
+const isAvail = (type, it) => type === 'offer' ? true : !!it.available && !(tracked(it) && Number(it.stock) <= 0);
+const lowTag = p => tracked(p) && Number(p.stock) > 0 && Number(p.stock) <= Number(p.low_stock ?? 5) ? `<div class="low">باقي ${Number(p.stock)} فقط</div>` : '';
 
 /* ══ LOAD ══ */
 // الخادم بيرجّع 1000 صف بس في المرة، فنقرا المنتجات على دفعات
@@ -132,8 +135,8 @@ function renderProducts() {
   $('prodTitle').textContent = q ? 'نتائج البحث' : cat ? cat.name : 'المنتجات';
   $('prods').innerHTML = list.length ? list.map(p => `<div class="pc">
     <div class="pc-img">${imgHtml(p, p.name)}${discTag(p)}</div>
-    <div class="pc-body"><div class="pc-name">${esc(p.name)}</div><div class="pc-desc">${esc(p.description || '')}</div>
-      <div class="pc-row">${priceBlock(p)}${ctrl('product', p.id, p.available)}</div></div></div>`).join('')
+    <div class="pc-body"><div class="pc-name">${esc(p.name)}</div><div class="pc-desc">${esc(p.description || '')}</div>${lowTag(p)}
+      <div class="pc-row">${priceBlock(p)}${ctrl('product', p.id, isAvail('product', p))}</div></div></div>`).join('')
     : '<div class="empty">لا توجد منتجات</div>';
 }
 
@@ -152,12 +155,15 @@ function loadCart() {
   cart = {};
   for (const [k, c] of Object.entries(saved)) {
     const it = c && getItem(c.type, c.id);
-    if (it && isAvail(c.type, it) && c.qty > 0) cart[k] = { type: c.type, id: c.id, qty: Math.min(50, c.qty) };
+    if (it && isAvail(c.type, it) && c.qty > 0) cart[k] = { type: c.type, id: c.id, qty: Math.min(50, c.qty, c.type === 'product' ? Math.floor(stockOf(it)) || 1 : 50) };
   }
   saveCart();
 }
 window.chg = (type, id, d) => {
-  const k = `${type}:${id}`, cur = cart[k] ? cart[k].qty : 0, n = Math.min(50, cur + d);
+  const k = `${type}:${id}`, cur = cart[k] ? cart[k].qty : 0;
+  const it = getItem(type, id), cap = type === 'product' && it ? stockOf(it) : Infinity;
+  let n = Math.min(50, cur + d);
+  if (n > cap) { n = Math.max(cur, Math.floor(cap)); if (d > 0) toast(`المتاح من هذا المنتج ${Math.floor(cap)} فقط`, 'err'); }
   if (n <= 0) delete cart[k]; else cart[k] = { type, id, qty: n };
   saveCart(); renderOffers(); renderProducts(); renderBar();
   if ($('moCart').classList.contains('open')) renderCart();
@@ -165,9 +171,8 @@ window.chg = (type, id, d) => {
 function totals() {
   let sub = 0, count = 0;
   Object.values(cart).forEach(c => { const it = getItem(c.type, c.id); if (it) { sub += Number(it.price) * c.qty; count += c.qty; } });
-  const base = Number(settings.delivery_fee) || 0, free = Number(settings.free_over) || 0, min = Number(settings.min_order) || 0;
-  const fee = count && !(free > 0 && sub >= free) ? base : 0;
-  return { sub, count, fee, total: sub + fee, min };
+  const min = Number(settings.min_order) || 0;
+  return { sub, count, fee: 0, total: sub, min };   // التوصيل بيتحدد من المتجر وقت تجهيز الطلب
 }
 function renderBar() {
   const t = totals();
@@ -177,6 +182,12 @@ function renderBar() {
   $('barTotal').textContent = EGP(t.sub);
 }
 
+function delNote() {
+  const a = Number(settings.delivery_min) || 0, b = Number(settings.delivery_max) || 0;
+  if (!a && !b) return '';
+  const r = a && b && a !== b ? `من ${a} إلى ${b} جنيه` : `${a || b} جنيه`;
+  return `رسوم التوصيل ${r} حسب منطقتك، وبتتحدد وتتضاف على الفاتورة وقت تجهيز الطلب.`;
+}
 function renderCart() {
   const t = totals();
   const rows = Object.values(cart).map(c => ({ c, it: getItem(c.type, c.id) })).filter(x => x.it);
@@ -186,7 +197,7 @@ function renderCart() {
       <div class="step"><button onclick="chg('${c.type}',${c.id},1)">+</button><span>${c.qty}</span><button onclick="chg('${c.type}',${c.id},-1)">−</button></div></div>`).join('')
     : '<div class="empty">السلة فارغة</div>';
   $('sSub').textContent = EGP(t.sub);
-  $('sFee').textContent = !t.count ? '—' : t.fee ? EGP(t.fee) : 'مجاني';
+  $('delNote').textContent = delNote(); $('delNote').classList.toggle('hide', !delNote());
   $('sTot').textContent = EGP(t.total);
   $('wAmt').textContent = EGP(t.total);
   const short = t.count && t.sub < t.min;
@@ -304,7 +315,7 @@ $('placeBtn').addEventListener('click', async () => {
   closeMo('moCart'); renderOffers(); renderProducts(); renderBar();
 
   $('dNo').textContent = `#${data.order_no}`;
-  $('dInfo').innerHTML = `المنتجات: ${EGP(data.subtotal)}<br>التوصيل: ${data.delivery_fee > 0 ? EGP(data.delivery_fee) : 'مجاني'}<br><b>الإجمالي: ${EGP(data.total)}</b><br>`
+  $('dInfo').innerHTML = `المنتجات: ${EGP(data.subtotal)}<br><b>الإجمالي: ${EGP(data.total)}</b>${delNote() ? `<div class="mut" style="margin:4px 0">${esc(delNote())}</div>` : '<br>'}`
     + (data.payment_method === 'wallet' ? 'الدفع: بالمحفظة (بانتظار تأكيد المتجر)' : 'الدفع: نقداً عند الاستلام');
   $('trkPhone').value = phone;
   openMo('moDone');
@@ -336,7 +347,7 @@ async function track() {
       <div class="trk-top"><b>طلب #${o.order_no} <span class="mut">${tm(o.created_at)}</span></b><span class="st ${o.status}">${STATUS[o.status]}</span></div>
       ${o.status === 'cancelled' ? '' : `<div class="steps">${STEPS.map((_, i) => `<i class="${i <= idx ? 'on' : ''}"></i>`).join('')}</div>`}
       <ul>${(o.items || []).map(i => `<li><span>${i.qty} × ${esc(i.name)}</span><span>${EGP(i.price * i.qty)}</span></li>`).join('')}</ul>
-      <div class="mut">التوصيل: ${o.delivery_fee > 0 ? EGP(o.delivery_fee) : 'مجاني'} · ${pay}</div>
+      <div class="mut">${o.delivery_fee > 0 ? `التوصيل: ${EGP(o.delivery_fee)}` : 'التوصيل: يُحدد حسب منطقتك'} · ${pay}</div>
       <div style="margin-top:4px"><b>الإجمالي: ${EGP(o.total)}</b></div>
       ${o.status === 'new' ? `<button class="btn btn-red btn-sm" style="margin-top:8px" onclick="cancelOrder(${o.id})">إلغاء الطلب</button>` : ''}
     </div>`;
